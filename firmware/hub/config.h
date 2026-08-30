@@ -7,8 +7,9 @@
 
 #define PIN_SD_SCK     14
 #define PIN_SD_MOSI    13
-#define PIN_SD_MISO    35
+#define PIN_SD_MISO    32
 #define PIN_SD_CS      27
+#define SD_CLOCK_HZ    4000000
 
 #define PIN_DHT        33
 #define PIN_BUZZER     21

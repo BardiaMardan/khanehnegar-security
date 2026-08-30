@@ -29,6 +29,10 @@ enum SecEvent : uint8_t {
   EV_PANIC         = 30,
   EV_DURESS        = 31,
   EV_CODE_ATTACK   = 32,
+  EV_ACCESS_OK     = 33,
+  EV_ACCESS_DENIED = 34,
+  EV_ARMED         = 35,
+  EV_DISARMED      = 36,
 };
 
 enum SecCommand : uint8_t {
@@ -80,21 +84,25 @@ inline const char *secEventName(uint8_t e) {
     case EV_RF_JAM:        return "RF JAMMING";
     case EV_NODE_LOST:     return "MODULE LOST";
     case EV_PANIC:         return "PANIC";
-    case EV_DURESS:        return "duress";
+    case EV_DURESS:        return "unlocked";
     case EV_CODE_ATTACK:   return "CODE ATTACK";
-    default:               return "?";
+    case EV_ACCESS_OK:     return "unlocked";
+    case EV_ACCESS_DENIED: return "denied";
+    case EV_ARMED:         return "armed";
+    case EV_DISARMED:      return "disarmed";
+    default:               return "event";
   }
 }
 
 inline const char *secKindName(uint8_t k) {
   switch (k) {
-    case KIND_HUB:    return "HUB";
+    case KIND_HUB:    return "PANEL";
     case KIND_DOOR:   return "DOOR";
-    case KIND_WINDOW: return "WIN";
-    case KIND_LASER:  return "LSR";
-    case KIND_DECOY:  return "DCY";
-    case KIND_PANEL:  return "PNL";
-    default:          return "???";
+    case KIND_WINDOW: return "WINDOW";
+    case KIND_LASER:  return "BEAM";
+    case KIND_DECOY:  return "DECOY";
+    case KIND_PANEL:  return "REMOTE";
+    default:          return "NODE";
   }
 }
 

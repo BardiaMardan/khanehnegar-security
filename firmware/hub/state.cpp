@@ -46,6 +46,20 @@ static int      g_logN = 0;
 
 static uint8_t     g_unknownHits  = 0;
 static uint32_t    g_unknownFirst = 0;
+static char        g_toast[28]    = "";
+static uint8_t     g_toastKind    = 0;
+static uint32_t    g_toastAt      = 0;
+
+void showToast(const char *text, uint8_t kind) {
+  strncpy(g_toast, text, sizeof(g_toast) - 1);
+  g_toast[sizeof(g_toast) - 1] = 0;
+  g_toastKind = kind;
+  g_toastAt = millis();
+}
+
+const char *toastText() { return g_toast; }
+uint8_t     toastKind() { return g_toastKind; }
+uint32_t    toastAge()  { return g_toastAt ? millis() - g_toastAt : 0xFFFFFFFF; }
 
 static void say(const char *m) { strncpy(g_msg, m, sizeof(g_msg) - 1); }
 
@@ -75,6 +89,7 @@ static void raise(bool loud, uint8_t kind, uint8_t code, uint16_t value) {
     g_deadline = millis() + ALARM_DURATION_MS;
     IO::sirenOn();
     say("ALARM");
+    showToast("ALARM", 3);
     logEvent(kind, code, value, false);
     broadcastMode();
   } else {
@@ -138,12 +153,13 @@ void panic() {
 }
 
 void requestArm(uint8_t m) {
-  if (m == MODE_DISARMED) { setMode(MODE_DISARMED); IO::ack(); return; }
+  if (m == MODE_DISARMED) { setMode(MODE_DISARMED); IO::ack(); showToast("DISARMED", 1); return; }
   g_pendingMode = m;
   g_mode = MODE_DISARMED;
   g_deadline = millis() + EXIT_DELAY_MS;
   g_risk = g_loudRisk = 0;
-  say(m == MODE_AWAY ? "arming: leave now" : "arming home");
+  say("arming, leave now");
+  showToast("ARMING, LEAVE NOW", 2);
   IO::beep(1, 120, 0);
 }
 
@@ -164,16 +180,21 @@ bool submitPin(const String &pin) {
     doDisarm();
     g_silent = true;
     logEvent(KIND_HUB, EV_DURESS, 0, true);
+    showToast("DISARMED", 1);
     return true;
   }
   if (pin == DEFAULT_PIN) {
     doDisarm();
     g_silent = false;
+    logEvent(KIND_HUB, EV_DISARMED, 0, false);
+    showToast("DISARMED", 1);
     return true;
   }
   g_pinFails++;
   IO::reject();
   say("wrong code");
+  showToast("WRONG CODE", 3);
+  logEvent(KIND_HUB, EV_ACCESS_DENIED, g_pinFails, false);
   if (g_pinFails >= MAX_PIN_ATTEMPTS) {
     g_pinFails = 0;
     raise(false, KIND_HUB, EV_CODE_ATTACK, 0);
@@ -191,12 +212,18 @@ void onFinger(uint16_t id, uint16_t score) {
     doDisarm();
     g_silent = true;
     logEvent(KIND_HUB, EV_DURESS, score, true);
-    Net::alert(true, "HUB", "duress finger", id);
+    Net::alert(true, "PANEL", "duress finger", id);
+    String d = Store::fingerLabel(id);
+    if (!d.length()) d = String("finger ") + String(id);
+    showToast(("welcome " + d).c_str(), 1);
     return;
   }
   doDisarm();
   g_silent = false;
-  logEvent(KIND_HUB, EV_NONE, id, false);
+  logEvent(KIND_HUB, EV_ACCESS_OK, id, false);
+  String who = Store::fingerLabel(id);
+  if (!who.length()) who = String("finger ") + String(id);
+  showToast(("welcome " + who).c_str(), 1);
 }
 
 void onUnknownFinger() {
@@ -208,7 +235,8 @@ void onUnknownFinger() {
   g_unknownHits++;
   IO::reject();
   say("not recognised");
-  logEvent(KIND_HUB, EV_NONE, g_unknownHits, false);
+  showToast("FINGER NOT RECOGNISED", 3);
+  logEvent(KIND_HUB, EV_ACCESS_DENIED, g_unknownHits, false);
 
   if (g_unknownHits >= UNKNOWN_FINGER_LIMIT || g_mode == MODE_AWAY) {
     g_unknownHits = 0;
@@ -257,7 +285,9 @@ void tick() {
       const uint8_t m = g_pendingMode;
       g_pendingMode = MODE_DISARMED;
       setMode(m);
-      say(m == MODE_AWAY ? "armed away" : "armed home");
+      say("armed");
+      showToast("ARMED", 2);
+      logEvent(KIND_HUB, EV_ARMED, 0, false);
       IO::beep(2, 100, 100);
     }
   }
@@ -270,6 +300,7 @@ uint8_t mode() { return g_mode; }
 bool silentLatched() { return g_silent; }
 int  risk() { return g_risk; }
 uint8_t displayMode() { return g_mode; }
+bool arming() { return g_pendingMode != MODE_DISARMED; }
 
 uint32_t countdownMs() {
   if (g_deadline == 0) return 0;

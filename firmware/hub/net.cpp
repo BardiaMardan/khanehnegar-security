@@ -49,8 +49,19 @@ static void syncTime() {
   if (!http.begin(c.serverUrl + "/api/time")) return;
   http.addHeader("X-Api-Key", c.apiKey);
   if (http.GET() == 200) {
-    const long unix = findNumber(http.getString(), "\"unix\"");
+    const String body = http.getString();
+    const long unix = findNumber(body, "\"unix\"");
     if (unix > 1000000000L) Store::setEpoch((uint32_t)unix);
+    const int oi = body.indexOf("\"offset\"");
+    if (oi >= 0) {
+      int i = body.indexOf(':', oi) + 1;
+      bool neg = false;
+      while (i < (int)body.length() && (body[i] == ' ' || body[i] == '"')) i++;
+      if (i < (int)body.length() && body[i] == '-') { neg = true; i++; }
+      long v = 0;
+      while (i < (int)body.length() && isDigit(body[i])) { v = v * 10 + (body[i] - '0'); i++; }
+      Store::setOffsetMinutes((int16_t)(neg ? -v : v));
+    }
   }
   http.end();
 }

@@ -41,12 +41,12 @@ static bool hit(const Btn &b, int16_t x, int16_t y) {
   return x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h;
 }
 
-static void drawBtn(const Btn &b, uint16_t fill, uint16_t text) {
-  tft.fillRoundRect(b.x, b.y, b.w, b.h, 4, fill);
+static void drawBtn(const Btn &b, uint16_t fill, uint16_t text, uint8_t font = 2) {
+  tft.fillRoundRect(b.x, b.y, b.w, b.h, 5, fill);
   tft.setTextPadding(0);
   tft.setTextColor(text, fill);
   tft.setTextDatum(MC_DATUM);
-  tft.drawString(b.label, b.x + b.w / 2, b.y + b.h / 2, 2);
+  tft.drawString(b.label, b.x + b.w / 2, b.y + b.h / 2, font);
 }
 
 static void label(int16_t x, int16_t y, const String &s, uint16_t fg,
@@ -132,68 +132,78 @@ static bool navTouch(int16_t x, int16_t y) {
   return true;
 }
 
-static const Btn kArmAway = {6, 224, 110, 40, "ARM AWAY"};
-static const Btn kArmHome = {124, 224, 110, 40, "ARM HOME"};
+static const Btn kAction = {6, 208, 228, 56, "ARM"};
+
+static const char *actionLabel() {
+  if (Sec::arming()) return "CANCEL";
+  if (Sec::mode() == MODE_DISARMED) return "ARM";
+  return "DISARM";
+}
 
 static void drawStatus(bool full) {
-  const uint8_t m = Sec::displayMode();
+  const uint8_t  m = Sec::displayMode();
+  const uint16_t c = modeColour(m);
 
   if (full) {
-    tft.fillRect(0, 46, 240, NAV_TOP - 46, COL_BG);
-    label(8, 78, "risk", COL_DIM, 1, 0);
-    tft.drawRect(40, 76, 192, 10, COL_DIM);
-    drawBtn(kArmAway, COL_PANEL, COL_TEXT);
-    drawBtn(kArmHome, COL_PANEL, COL_TEXT);
+    tft.fillRect(0, 52, 240, NAV_TOP - 52, COL_BG);
+    tft.drawRoundRect(6, 84, 228, 12, 3, COL_PANEL);
   }
 
   if (full || m != g_lastMode) {
     g_lastMode = m;
-    const uint16_t c = modeColour(m);
-    tft.fillRect(0, 0, 240, 46, c);
+    tft.fillRect(0, 0, 240, 52, c);
     tft.setTextPadding(0);
     tft.setTextColor(COL_BG, c);
-    tft.setTextDatum(MC_DATUM);
-    tft.drawString(secModeName(m), 120, 23, 4);
+    tft.setTextDatum(ML_DATUM);
+    tft.drawString(secModeName(m), 10, 26, 4);
   }
 
-  label(8, 54, Sec::message(), COL_TEXT, 2, 168);
+  tft.setTextDatum(MR_DATUM);
+  tft.setTextPadding(58);
+  tft.setTextColor(COL_BG, c);
+  tft.drawString(Store::clockHHMM(), 232, 27, 2);
+  tft.setTextPadding(0);
 
+  label(8, 58, Sec::message(), COL_TEXT, 2, 168);
   const uint32_t cd = Sec::countdownMs();
-  label(180, 54, cd ? String(cd / 1000) + "s" : String(""), COL_WARN, 2, 52);
+  label(182, 58, cd ? String(cd / 1000) + "s" : String(""), COL_WARN, 2, 50);
 
   const int r = constrain(Sec::risk(), 0, RISK_MAX);
-  const int w = map(r, 0, RISK_MAX, 0, 190);
+  const int w = map(r, 0, RISK_MAX, 0, 224);
   const uint16_t rc = r >= RISK_ALARM_THRESHOLD ? COL_BAD : r > 0 ? COL_WARN : COL_BG;
-  if (w) tft.fillRect(41, 77, w, 8, rc);
-  if (w < 190) tft.fillRect(41 + w, 77, 190 - w, 8, COL_BG);
+  if (w) tft.fillRect(8, 86, w, 8, rc);
+  if (w < 224) tft.fillRect(8 + w, 86, 224 - w, 8, COL_BG);
 
-  label(8, 94, "modules " + String(Nodes::liveCount()) + " live / " +
-               String(Nodes::deadCount()) + " lost", COL_DIM, 2, 224);
-
-  String aux;
-  if (Climate::valid()) {
-    aux = String((int)Climate::tempC()) + "C " + String((int)Climate::humidity()) + "%";
-  } else {
-    aux = "--C --%";
-  }
-  aux += Net::online() ? "  online" : "  offline";
-  label(8, 112, aux, Net::online() ? COL_DIM : COL_WARN, 2, 224);
+  String aux = String(Nodes::liveCount()) + " modules";
+  if (Nodes::deadCount()) aux += ", " + String(Nodes::deadCount()) + " lost";
+  if (Climate::valid()) aux += "   " + String((int)Climate::tempC()) + "C";
+  aux += Net::online() ? "   net" : "   no net";
+  label(8, 102, aux, Net::online() ? COL_DIM : COL_WARN, 2, 224);
 
   for (int row = 0; row < 4; row++) {
+    const int y = 128 + row * 20;
     if (row < Sec::logCount()) {
       const LogEntry &e = Sec::logAt(row);
-      label(8, 134 + row * 20, String(secKindName(e.kind)) + " " + secEventName(e.code),
+      label(8, y, String(secKindName(e.kind)) + "   " + secEventName(e.code),
             e.silent ? COL_ACCENT : COL_TEXT, 2, 224);
     } else {
-      label(8, 134 + row * 20, "", COL_TEXT, 2, 224);
+      label(8, y, "", COL_TEXT, 2, 224);
     }
   }
+
+  Btn b = kAction;
+  b.label = actionLabel();
+  const uint16_t fill = Sec::arming() ? COL_WARN
+                      : Sec::mode() == MODE_DISARMED ? COL_OK : COL_BAD;
+  drawBtn(b, fill, COL_BG, 4);
 }
 
 static bool statusTouch(int16_t x, int16_t y) {
-  if (hit(kArmAway, x, y)) { Sec::requestArm(MODE_AWAY); return true; }
-  if (hit(kArmHome, x, y)) { Sec::requestArm(MODE_HOME); return true; }
-  return false;
+  if (!hit(kAction, x, y)) return false;
+  if (Sec::arming())               { Sec::requestArm(MODE_DISARMED); return true; }
+  if (Sec::mode() == MODE_DISARMED) { Sec::requestArm(MODE_AWAY);    return true; }
+  go(PAGE_KEYPAD);
+  return true;
 }
 
 static const char *kKeys[12] = {"1","2","3","4","5","6","7","8","9","CLR","0","OK"};
@@ -312,6 +322,19 @@ static bool nodesTouch(int16_t x, int16_t y) {
   return false;
 }
 
+static bool g_toastShown = false;
+
+static void drawToast() {
+  const uint8_t k = Sec::toastKind();
+  const uint16_t c = (k == 1) ? COL_OK : (k == 2) ? COL_WARN : COL_BAD;
+  tft.fillRoundRect(8, 118, 224, 46, 6, c);
+  tft.drawRoundRect(8, 118, 224, 46, 6, COL_TEXT);
+  tft.setTextPadding(0);
+  tft.setTextColor(COL_BG, c);
+  tft.setTextDatum(MC_DATUM);
+  tft.drawString(Sec::toastText(), 120, 141, 2);
+}
+
 void tick() {
   const uint32_t now = millis();
 
@@ -340,7 +363,9 @@ void tick() {
     g_full = true;
   }
 
-  const bool periodic = (g_page != PAGE_KEYPAD) && (now - g_lastPaint > 500);
+  const bool toastLive = Sec::toastAge() < 2200;
+  const bool periodic = (now - g_lastPaint > 400) &&
+                        (g_page != PAGE_KEYPAD || toastLive || g_toastShown);
   if (!g_full && !g_dirty && !periodic) return;
 
   const bool full = g_full;
@@ -355,6 +380,14 @@ void tick() {
     case PAGE_NODES:  drawNodes(full);  break;
   }
   if (full) drawNav();
+
+  if (toastLive) {
+    drawToast();
+    g_toastShown = true;
+  } else if (g_toastShown) {
+    g_toastShown = false;
+    g_full = true;
+  }
 }
 
 }

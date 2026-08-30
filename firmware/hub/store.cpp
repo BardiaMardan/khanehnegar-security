@@ -21,6 +21,7 @@ static int      g_fingers = 0;
 
 static uint32_t g_epochBase = 0;
 static uint32_t g_epochAtMs = 0;
+static int16_t  g_offsetMin = 0;
 static bool     g_haveTime  = false;
 
 bool ready() { return g_ready; }
@@ -86,12 +87,17 @@ bool begin() {
   g_cfg.timezone     = "Asia/Tehran";
   g_cfg.duressFinger = 0;
 
+  pinMode(PIN_SD_MISO, INPUT_PULLUP);
+  pinMode(PIN_SD_CS, OUTPUT);
+  digitalWrite(PIN_SD_CS, HIGH);
   sdSpi.begin(PIN_SD_SCK, PIN_SD_MISO, PIN_SD_MOSI, PIN_SD_CS);
-  if (!SD.begin(PIN_SD_CS, sdSpi, 10000000)) {
-    g_ready = false;
-    return false;
+
+  g_ready = false;
+  for (int attempt = 0; attempt < 3 && !g_ready; attempt++) {
+    if (SD.begin(PIN_SD_CS, sdSpi, SD_CLOCK_HZ)) g_ready = true;
+    else delay(250);
   }
-  g_ready = true;
+  if (!g_ready) return false;
 
   if (!SD.exists("/khaneh")) SD.mkdir("/khaneh");
   readIni(CFG_PATH, applyConfig);
@@ -149,9 +155,26 @@ void setEpoch(uint32_t ep) {
   g_haveTime = true;
 }
 
+void setOffsetMinutes(int16_t minutes) { g_offsetMin = minutes; }
+
 uint32_t epoch() {
   if (!g_haveTime) return 0;
   return g_epochBase + (millis() - g_epochAtMs) / 1000;
+}
+
+uint32_t localEpoch() {
+  const uint32_t e = epoch();
+  if (!e) return 0;
+  return e + (int32_t)g_offsetMin * 60;
+}
+
+String clockHHMM() {
+  const uint32_t e = localEpoch();
+  if (!e) return String("--:--");
+  const uint32_t day = e % 86400UL;
+  char buf[6];
+  snprintf(buf, sizeof(buf), "%02u:%02u", (unsigned)(day / 3600), (unsigned)((day % 3600) / 60));
+  return String(buf);
 }
 
 bool haveTime() { return g_haveTime; }

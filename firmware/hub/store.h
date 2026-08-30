@@ -26,6 +26,9 @@ void appendEvent(uint32_t epoch, const char *kind, const char *event,
                  uint16_t value, bool silent);
 
 void setEpoch(uint32_t epoch);
+void setOffsetMinutes(int16_t minutes);
 uint32_t epoch();
+uint32_t localEpoch();
 bool haveTime();
+String clockHHMM();
 }

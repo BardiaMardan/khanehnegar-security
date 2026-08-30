@@ -16,6 +16,7 @@ void tick();
 
 uint8_t  mode();
 uint8_t  displayMode();
+bool     arming();
 bool     silentLatched();
 int      risk();
 uint32_t countdownMs();
@@ -32,4 +33,9 @@ void panic();
 int             logCount();
 const LogEntry &logAt(int i);
 const char     *message();
+
+const char *toastText();
+uint8_t     toastKind();
+uint32_t    toastAge();
+void        showToast(const char *text, uint8_t kind);
 }
