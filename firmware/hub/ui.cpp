@@ -281,8 +281,10 @@ static bool nodesTouch(int16_t x, int16_t y) {
 void tick() {
   const uint32_t now = millis();
 
-  int16_t tx, ty;
-  if (now > g_touchGuard && tft.getTouch(&tx, &ty)) {
+  uint16_t rx, ry;
+  if (now > g_touchGuard && tft.getTouch(&rx, &ry)) {
+    const int16_t tx = (int16_t)rx;
+    const int16_t ty = (int16_t)ry;
     g_touchGuard = now + 220;
     bool handled = navTouch(tx, ty);
     if (!handled) {
