@@ -1,0 +1,139 @@
+#include "nodes.h"
+#include <Preferences.h>
+
+namespace Nodes {
+
+static NodeRec     g[SECMESH_MAX_NODES];
+static bool        g_pairing = false;
+static uint32_t    g_pairingOpenedAt = 0;
+static Preferences prefs;
+
+NodeRec *justDied = nullptr;
+
+void begin() {
+  memset(g, 0, sizeof(g));
+  load();
+}
+
+NodeRec *find(const uint8_t mac[6]) {
+  for (int i = 0; i < SECMESH_MAX_NODES; i++)
+    if (g[i].used && SecMeshClass::macEq(g[i].mac, mac)) return &g[i];
+  return nullptr;
+}
+
+NodeRec *adopt(const uint8_t mac[6], uint8_t kind, bool encrypted) {
+  NodeRec *n = find(mac);
+  if (!n) {
+    if (!g_pairing) return nullptr;
+    for (int i = 0; i < SECMESH_MAX_NODES; i++) {
+      if (!g[i].used) { n = &g[i]; break; }
+    }
+    if (!n) return nullptr;
+    memset(n, 0, sizeof(NodeRec));
+    memcpy(n->mac, mac, 6);
+    n->used = true;
+  }
+  n->kind        = kind;
+  n->encrypted   = encrypted;
+  n->lastSeen    = millis();
+  n->lastCounter = 0;
+  n->dead        = false;
+  SecMesh.addPeer(mac, encrypted);
+  save();
+  return n;
+}
+
+bool acceptCounter(NodeRec *n, uint32_t counter) {
+  if (counter <= n->lastCounter) return false;
+  n->lastCounter = counter;
+  return true;
+}
+
+void touchSeen(NodeRec *n, const SecFrame &f) {
+  n->lastSeen  = millis();
+  n->supplyMv  = f.supplyMv;
+  n->flags     = f.flags;
+  n->lastEvent = f.code;
+  n->dead      = false;
+}
+
+void tick() {
+  const uint32_t now = millis();
+  for (int i = 0; i < SECMESH_MAX_NODES; i++) {
+    if (!g[i].used || g[i].dead) continue;
+    if (g[i].lastCounter == 0) continue;
+    if (now - g[i].lastSeen > SECMESH_DEAD_MS) {
+      g[i].dead = true;
+      justDied = &g[i];
+    }
+  }
+  if (g_pairing && now - g_pairingOpenedAt > 120000UL) g_pairing = false;
+}
+
+int capacity() { return SECMESH_MAX_NODES; }
+NodeRec *at(int i) { return (i >= 0 && i < SECMESH_MAX_NODES) ? &g[i] : nullptr; }
+
+int liveCount() {
+  int c = 0;
+  for (int i = 0; i < SECMESH_MAX_NODES; i++) if (g[i].used && !g[i].dead) c++;
+  return c;
+}
+
+int deadCount() {
+  int c = 0;
+  for (int i = 0; i < SECMESH_MAX_NODES; i++) if (g[i].used && g[i].dead) c++;
+  return c;
+}
+
+void setPairingMode(bool on) {
+  g_pairing = on;
+  g_pairingOpenedAt = millis();
+}
+
+bool pairingMode() { return g_pairing; }
+
+void save() {
+  prefs.begin("khaneh", false);
+  for (int i = 0; i < SECMESH_MAX_NODES; i++) {
+    char key[8];
+    snprintf(key, sizeof(key), "n%d", i);
+    if (g[i].used) {
+      uint8_t blob[8];
+      memcpy(blob, g[i].mac, 6);
+      blob[6] = g[i].kind;
+      blob[7] = g[i].encrypted ? 1 : 0;
+      prefs.putBytes(key, blob, sizeof(blob));
+    } else {
+      prefs.remove(key);
+    }
+  }
+  prefs.end();
+}
+
+void load() {
+  prefs.begin("khaneh", true);
+  for (int i = 0; i < SECMESH_MAX_NODES; i++) {
+    char key[8];
+    snprintf(key, sizeof(key), "n%d", i);
+    uint8_t blob[8];
+    if (prefs.getBytes(key, blob, sizeof(blob)) == sizeof(blob)) {
+      memcpy(g[i].mac, blob, 6);
+      g[i].kind      = blob[6];
+      g[i].encrypted = blob[7] != 0;
+      g[i].used      = true;
+      g[i].dead      = false;
+      SecMesh.addPeer(g[i].mac, g[i].encrypted);
+    }
+  }
+  prefs.end();
+}
+
+void forgetAll() {
+  for (int i = 0; i < SECMESH_MAX_NODES; i++) {
+    if (g[i].used) SecMesh.removePeer(g[i].mac);
+  }
+  memset(g, 0, sizeof(g));
+  save();
+}
+
+}
