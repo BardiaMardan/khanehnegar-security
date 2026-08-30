@@ -7,6 +7,7 @@
 #define PIN_DOOR        14
 #define PIN_CASE        12
 #define PIN_LED          2
+#define PIN_UNCLAIM      0
 
 #define ENABLE_CASE_TAMPER 1
 
@@ -160,6 +161,16 @@ void setup() {
   if (!SecMesh.begin(KIND_DOOR, onRx)) {
     Serial.println("FATAL: ESP-NOW would not start");
   }
+
+  pinMode(PIN_UNCLAIM, INPUT_PULLUP);
+  if (digitalRead(PIN_UNCLAIM) == LOW) {
+    SecMesh.clearClaim();
+    for (int i = 0; i < 10; i++) { digitalWrite(PIN_LED, i % 2); delay(80); }
+    Serial.println("claim cleared");
+  } else {
+    SecMesh.loadClaim();
+  }
+
 #if ENABLE_CASE_TAMPER
   SecMesh.setTamperPin(PIN_CASE, true);
 #endif

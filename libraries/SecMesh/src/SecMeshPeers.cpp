@@ -3,11 +3,15 @@
 #if defined(ESP8266)
   #include <ESP8266WiFi.h>
   #include <espnow.h>
+  #include <EEPROM.h>
 #else
   #include <WiFi.h>
   #include <esp_wifi.h>
   #include <esp_now.h>
+  #include <Preferences.h>
 #endif
+
+#define CLAIM_TAG 0xA5
 
 bool SecMeshClass::addPeer(const uint8_t mac[6], bool encrypted) {
 #if defined(ESP8266)
@@ -35,10 +39,53 @@ bool SecMeshClass::removePeer(const uint8_t mac[6]) {
 #endif
 }
 
+static void writeClaim(const uint8_t mac[6], bool valid) {
+#if defined(ESP8266)
+  EEPROM.begin(16);
+  EEPROM.write(0, valid ? CLAIM_TAG : 0);
+  for (int i = 0; i < 6; i++) EEPROM.write(1 + i, valid ? mac[i] : 0);
+  EEPROM.commit();
+  EEPROM.end();
+#else
+  Preferences p;
+  p.begin("secmesh", false);
+  if (valid) p.putBytes("hub", mac, 6);
+  else       p.remove("hub");
+  p.end();
+#endif
+}
+
+void SecMeshClass::loadClaim() {
+  uint8_t mac[6];
+#if defined(ESP8266)
+  EEPROM.begin(16);
+  const uint8_t tag = EEPROM.read(0);
+  for (int i = 0; i < 6; i++) mac[i] = EEPROM.read(1 + i);
+  EEPROM.end();
+  if (tag != CLAIM_TAG) return;
+#else
+  Preferences p;
+  p.begin("secmesh", true);
+  const size_t got = p.getBytes("hub", mac, 6);
+  p.end();
+  if (got != 6) return;
+#endif
+  memcpy(_hubMac, mac, 6);
+  _hasHub = true;
+  _flags |= SF_PAIRED;
+  addPeer(_hubMac, false);
+}
+
+void SecMeshClass::clearClaim() {
+  writeClaim(nullptr, false);
+  forgetHub();
+}
+
 void SecMeshClass::setHub(const uint8_t mac[6]) {
   memcpy(_hubMac, mac, 6);
   _hasHub = true;
   _flags |= SF_PAIRED;
+  writeClaim(mac, true);
 }
 
 void SecMeshClass::forgetHub() {
@@ -92,8 +139,11 @@ void SecMeshClass::tick() {
   if (_kind == KIND_HUB) return;
 
   if (!_hasHub) {
-    if (now - _lastPairTry > 2000) {
+    if (now - _lastPairTry > 400) {
       _lastPairTry = now;
+      _hopChannel++;
+      if (_hopChannel > 13) _hopChannel = 1;
+      setChannel(_hopChannel);
       requestPairing();
     }
     return;
@@ -102,5 +152,10 @@ void SecMeshClass::tick() {
   if (now - _lastHeartbeat > SECMESH_HEARTBEAT_MS) {
     _lastHeartbeat = now;
     send(EV_HEARTBEAT, 0, 0);
+    if (_lastDown && now - _lastDown > 90000UL) {
+      _hopChannel++;
+      if (_hopChannel > 13) _hopChannel = 1;
+      setChannel(_hopChannel);
+    }
   }
 }

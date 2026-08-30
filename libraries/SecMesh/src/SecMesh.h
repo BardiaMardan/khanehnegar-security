@@ -30,6 +30,8 @@ class SecMeshClass {
   const uint8_t *hubMac() const { return _hubMac; }
   void setHub(const uint8_t mac[6]);
   void forgetHub();
+  void loadClaim();
+  void clearClaim();
 
   bool send(uint8_t code, uint8_t arg = 0, uint16_t value = 0);
   bool sendUrgent(uint8_t code, uint8_t arg = 0, uint16_t value = 0);
@@ -71,6 +73,8 @@ class SecMeshClass {
   bool     _tamperLast       = false;
   uint32_t _lastHeartbeat    = 0;
   uint32_t _lastPairTry      = 0;
+  uint8_t  _hopChannel       = 1;
+  uint32_t _lastDown         = 0;
 };
 
 extern SecMeshClass SecMesh;

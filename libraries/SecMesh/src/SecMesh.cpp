@@ -106,6 +106,8 @@ void SecMeshClass::_onRaw(const uint8_t *mac, const uint8_t *data, int len) {
   SecFrame f;
   memcpy(&f, data, sizeof(SecFrame));
   if (f.magic != SECMESH_MAGIC || f.version != SECMESH_VERSION) return;
+  if (_kind != KIND_HUB && _hasHub && !macEq(mac, _hubMac)) return;
+  _lastDown = millis();
   _cb(mac, f);
 }
 
