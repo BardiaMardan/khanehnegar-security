@@ -40,6 +40,8 @@ class SecMeshClass {
   bool broadcast(uint8_t code, uint8_t arg = 0, uint16_t value = 0);
 
   void tick();
+  void setChannel(uint8_t ch);
+  uint8_t channel() const { return _channel; }
   void setTamperPin(int pin, bool openIsHigh = true);
   void setSupplyMv(uint16_t mv) { _supplyMv = mv; }
   uint8_t flags() const { return _flags; }
@@ -62,6 +64,7 @@ class SecMeshClass {
   uint8_t     _flags     = 0;
   uint16_t    _supplyMv  = 0;
   uint8_t     _mac[6]    = {0};
+  uint8_t     _channel   = SECMESH_CHANNEL;
 
   int      _tamperPin        = -1;
   bool     _tamperActiveHigh = true;

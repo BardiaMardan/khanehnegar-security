@@ -3,6 +3,10 @@
 #include "nodes.h"
 #include "io.h"
 #include "config.h"
+#include "store.h"
+#include "climate.h"
+#include "net.h"
+#include "fp.h"
 #include <TFT_eSPI.h>
 #include <Preferences.h>
 
@@ -18,9 +22,6 @@ static uint32_t g_lastTouch  = 0;
 static uint32_t g_touchGuard = 0;
 static uint8_t  g_lastMode   = 255;
 static String   g_pin        = "";
-static bool     g_enroll     = false;
-static bool     g_enrollDur  = false;
-static String   g_lastUid    = "";
 
 #define COL_BG      0x0000
 #define COL_PANEL   0x18C3
@@ -112,15 +113,6 @@ void go(Page p) {
   g_dirty = true;
 }
 
-bool enrollArmed()    { return g_enroll; }
-bool enrollAsDuress() { return g_enrollDur; }
-void clearEnroll()    { g_enroll = false; g_enrollDur = false; g_full = true; }
-
-void flashCardSeen(const String &uid) {
-  g_lastUid = uid;
-  g_dirty = true;
-}
-
 static const char *kTabs[4] = {"STAT", "CODE", "LOG", "NODE"};
 
 static void drawNav() {
@@ -178,13 +170,22 @@ static void drawStatus(bool full) {
   label(8, 94, "modules " + String(Nodes::liveCount()) + " live / " +
                String(Nodes::deadCount()) + " lost", COL_DIM, 2, 224);
 
-  for (int row = 0; row < 5; row++) {
+  String aux;
+  if (Climate::valid()) {
+    aux = String((int)Climate::tempC()) + "C " + String((int)Climate::humidity()) + "%";
+  } else {
+    aux = "--C --%";
+  }
+  aux += Net::online() ? "  online" : "  offline";
+  label(8, 112, aux, Net::online() ? COL_DIM : COL_WARN, 2, 224);
+
+  for (int row = 0; row < 4; row++) {
     if (row < Sec::logCount()) {
       const LogEntry &e = Sec::logAt(row);
-      label(8, 118 + row * 20, String(secKindName(e.kind)) + " " + secEventName(e.code),
+      label(8, 134 + row * 20, String(secKindName(e.kind)) + " " + secEventName(e.code),
             e.silent ? COL_ACCENT : COL_TEXT, 2, 224);
     } else {
-      label(8, 118 + row * 20, "", COL_TEXT, 2, 224);
+      label(8, 134 + row * 20, "", COL_TEXT, 2, 224);
     }
   }
 }
@@ -260,21 +261,17 @@ static void drawLog(bool full) {
 
 static const Btn kPair    = {6, 196, 110, 34, "PAIR MODE"};
 static const Btn kForget  = {124, 196, 110, 34, "FORGET ALL"};
-static const Btn kEnroll  = {6, 234, 110, 34, "ADD CARD"};
+static const Btn kEnroll  = {6, 234, 110, 34, "ADD FINGER"};
 static const Btn kEnrollD = {124, 234, 110, 34, "ADD DURESS"};
 
 static void drawNodes(bool full) {
   if (full) {
     tft.fillRect(0, 0, 240, NAV_TOP, COL_BG);
     label(8, 6, "modules", COL_DIM, 2, 0);
-    drawBtn(kPair,    Nodes::pairingMode() ? COL_WARN : COL_PANEL, COL_TEXT);
-    drawBtn(kForget,  COL_PANEL, COL_TEXT);
-    drawBtn(kEnroll,  (g_enroll && !g_enrollDur) ? COL_WARN : COL_PANEL, COL_TEXT);
-    drawBtn(kEnrollD, (g_enroll && g_enrollDur)  ? COL_WARN : COL_PANEL, COL_TEXT);
   }
 
   int row = 0;
-  for (int i = 0; i < Nodes::capacity() && row < 7; i++) {
+  for (int i = 0; i < Nodes::capacity() && row < 6; i++) {
     NodeRec *n = Nodes::at(i);
     if (!n || !n->used) continue;
     const int y = 28 + row * 22;
@@ -288,16 +285,30 @@ static void drawNodes(bool full) {
     row++;
   }
   if (row == 0) label(8, 28, "none paired yet", COL_DIM, 2, 224);
-  for (int i = row; i < 7; i++) label(8, 28 + i * 22, "", COL_TEXT, 2, 224);
+  for (int i = row; i < 6; i++) label(8, 28 + i * 22, "", COL_TEXT, 2, 224);
 
-  label(8, 174, g_lastUid, COL_ACCENT, 1, 224);
+  String fpLine;
+  if (!FP::present()) {
+    fpLine = "fingerprint: not responding";
+  } else if (FP::enrolling()) {
+    fpLine = FP::enrollStep() == 1 ? "lift finger" : "place finger";
+  } else {
+    fpLine = "fingers " + String(Store::fingerCount()) + " / sd " +
+             String(Store::ready() ? "ok" : "MISSING");
+  }
+  label(8, 168, fpLine, FP::enrolling() ? COL_WARN : COL_DIM, 2, 224);
+
+  drawBtn(kPair,    Nodes::pairingMode() ? COL_WARN : COL_PANEL, COL_TEXT);
+  drawBtn(kForget,  COL_PANEL, COL_TEXT);
+  drawBtn(kEnroll,  (FP::enrolling() && !FP::lastEnrollDuress()) ? COL_WARN : COL_PANEL, COL_TEXT);
+  drawBtn(kEnrollD, COL_PANEL, COL_TEXT);
 }
 
 static bool nodesTouch(int16_t x, int16_t y) {
   if (hit(kPair, x, y))    { Nodes::setPairingMode(!Nodes::pairingMode()); g_full = true; return true; }
   if (hit(kForget, x, y))  { Nodes::forgetAll(); g_full = true; return true; }
-  if (hit(kEnroll, x, y))  { g_enroll = true; g_enrollDur = false; g_full = true; return true; }
-  if (hit(kEnrollD, x, y)) { g_enroll = true; g_enrollDur = true;  g_full = true; return true; }
+  if (hit(kEnroll, x, y))  { FP::startEnroll(false); g_full = true; return true; }
+  if (hit(kEnrollD, x, y)) { FP::startEnroll(true);  g_full = true; return true; }
   return false;
 }
 

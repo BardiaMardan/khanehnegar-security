@@ -22,16 +22,12 @@ uint32_t countdownMs();
 
 void onNodeEvent(NodeRec *n, const SecFrame &f);
 void onHubTamper(bool open);
-void onDecoyProbe();
-void onCard(const String &uid);
+void onFinger(uint16_t id, uint16_t score);
+void onUnknownFinger();
 
 bool submitPin(const String &pin);
 void requestArm(uint8_t m);
 void panic();
-
-void enrollCard(const String &uid, bool asDuress);
-bool cardKnown(const String &uid);
-int  enrolledCards();
 
 int             logCount();
 const LogEntry &logAt(int i);

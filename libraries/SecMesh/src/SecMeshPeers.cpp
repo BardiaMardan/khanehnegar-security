@@ -5,19 +5,20 @@
   #include <espnow.h>
 #else
   #include <WiFi.h>
+  #include <esp_wifi.h>
   #include <esp_now.h>
 #endif
 
 bool SecMeshClass::addPeer(const uint8_t mac[6], bool encrypted) {
 #if defined(ESP8266)
   if (esp_now_is_peer_exist((uint8_t *)mac)) esp_now_del_peer((uint8_t *)mac);
-  return esp_now_add_peer((uint8_t *)mac, ESP_NOW_ROLE_COMBO, SECMESH_CHANNEL,
+  return esp_now_add_peer((uint8_t *)mac, ESP_NOW_ROLE_COMBO, 0,
                           encrypted ? (uint8_t *)SECMESH_LMK : NULL,
                           encrypted ? 16 : 0) == 0;
 #else
   esp_now_peer_info_t p = {};
   memcpy(p.peer_addr, mac, 6);
-  p.channel = SECMESH_CHANNEL;
+  p.channel = 0;
   p.ifidx   = WIFI_IF_STA;
   p.encrypt = encrypted;
   if (encrypted) memcpy(p.lmk, SECMESH_LMK, 16);
@@ -53,6 +54,18 @@ void SecMeshClass::requestPairing() {
   const uint8_t wantsEncryption = 1;
 #endif
   broadcast(EV_PAIR_REQUEST, wantsEncryption, 0);
+}
+
+void SecMeshClass::setChannel(uint8_t ch) {
+  if (ch < 1 || ch > 13) return;
+  _channel = ch;
+#if defined(ESP8266)
+  wifi_set_channel(ch);
+#else
+  esp_wifi_set_promiscuous(true);
+  esp_wifi_set_channel(ch, WIFI_SECOND_CHAN_NONE);
+  esp_wifi_set_promiscuous(false);
+#endif
 }
 
 void SecMeshClass::setTamperPin(int pin, bool openIsHigh) {

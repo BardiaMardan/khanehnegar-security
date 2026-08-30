@@ -1,7 +1,8 @@
 #include "state.h"
 #include "io.h"
 #include "config.h"
-#include <Preferences.h>
+#include "store.h"
+#include "net.h"
 #include <SecMesh.h>
 
 namespace Sec {
@@ -43,11 +44,8 @@ static char     g_msg[48]     = "system ready";
 static LogEntry g_log[LOG_CAPACITY];
 static int      g_logN = 0;
 
-static String      g_cards[4];
-static String      g_duressCard;
 static uint8_t     g_unknownHits  = 0;
 static uint32_t    g_unknownFirst = 0;
-static Preferences prefs;
 
 static void say(const char *m) { strncpy(g_msg, m, sizeof(g_msg) - 1); }
 
@@ -55,6 +53,7 @@ static void logEvent(uint8_t kind, uint8_t code, uint16_t value, bool silent) {
   for (int i = LOG_CAPACITY - 1; i > 0; i--) g_log[i] = g_log[i - 1];
   g_log[0] = {millis(), kind, code, value, silent};
   if (g_logN < LOG_CAPACITY) g_logN++;
+  Store::appendEvent(Store::epoch(), secKindName(kind), secEventName(code), value, silent);
 }
 
 static void broadcastMode() {
@@ -82,6 +81,7 @@ static void raise(bool loud, uint8_t kind, uint8_t code, uint16_t value) {
     g_silent = true;
     logEvent(kind, code, value, true);
   }
+  Net::alert(!loud, secKindName(kind), secEventName(code), value);
 }
 
 static void addRisk(uint8_t kind, uint8_t code, uint16_t value) {
@@ -130,8 +130,6 @@ void onHubTamper(bool open) {
   if (open) addRisk(KIND_HUB, EV_TAMPER_OPEN, 0);
   else      logEvent(KIND_HUB, EV_TAMPER_CLOSED, 0, false);
 }
-
-void onDecoyProbe() { addRisk(KIND_DECOY, EV_RF_PROBE, 0); }
 
 void panic() {
   g_risk = RISK_MAX;
@@ -183,70 +181,42 @@ bool submitPin(const String &pin) {
   return false;
 }
 
-void onCard(const String &uid) {
-  if (g_duressCard.length() && uid == g_duressCard) {
+void onFinger(uint16_t id, uint16_t score) {
+  if (!Store::fingerKnown(id)) {
+    onUnknownFinger();
+    return;
+  }
+  g_unknownHits = 0;
+  if (Store::fingerIsDuress(id)) {
     doDisarm();
     g_silent = true;
-    logEvent(KIND_HUB, EV_DURESS, 0, true);
+    logEvent(KIND_HUB, EV_DURESS, score, true);
+    Net::alert(true, "HUB", "duress finger", id);
     return;
   }
-  if (cardKnown(uid)) {
-    doDisarm();
-    g_silent = false;
-    return;
-  }
+  doDisarm();
+  g_silent = false;
+  logEvent(KIND_HUB, EV_NONE, id, false);
+}
 
+void onUnknownFinger() {
   const uint32_t now = millis();
-  if (g_unknownHits == 0 || now - g_unknownFirst > UNKNOWN_CARD_WINDOW_MS) {
+  if (g_unknownHits == 0 || now - g_unknownFirst > UNKNOWN_FINGER_WINDOW_MS) {
     g_unknownFirst = now;
     g_unknownHits = 0;
   }
   g_unknownHits++;
   IO::reject();
-  say("unknown card");
+  say("not recognised");
   logEvent(KIND_HUB, EV_NONE, g_unknownHits, false);
 
-  if (g_unknownHits >= UNKNOWN_CARD_LIMIT || g_mode == MODE_AWAY) {
+  if (g_unknownHits >= UNKNOWN_FINGER_LIMIT || g_mode == MODE_AWAY) {
     g_unknownHits = 0;
     raise(false, KIND_HUB, EV_CODE_ATTACK, 0);
   }
 }
 
-bool cardKnown(const String &uid) {
-  for (int i = 0; i < 4; i++) if (g_cards[i].length() && g_cards[i] == uid) return true;
-  return false;
-}
-
-int enrolledCards() {
-  int c = 0;
-  for (int i = 0; i < 4; i++) if (g_cards[i].length()) c++;
-  return c;
-}
-
-void enrollCard(const String &uid, bool asDuress) {
-  prefs.begin("khaneh", false);
-  if (asDuress) {
-    g_duressCard = uid;
-    prefs.putString("dcard", uid);
-  } else {
-    for (int i = 0; i < 4; i++) {
-      if (!g_cards[i].length()) {
-        g_cards[i] = uid;
-        prefs.putString(String("card" + String(i)).c_str(), uid);
-        break;
-      }
-    }
-  }
-  prefs.end();
-  IO::beep(2, 80, 80);
-}
-
 void begin() {
-  prefs.begin("khaneh", true);
-  for (int i = 0; i < 4; i++)
-    g_cards[i] = prefs.getString(String("card" + String(i)).c_str(), "");
-  g_duressCard = prefs.getString("dcard", "");
-  prefs.end();
   g_decayAt = millis();
 }
 
