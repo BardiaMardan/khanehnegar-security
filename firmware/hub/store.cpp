@@ -96,12 +96,12 @@ bool begin() {
   digitalWrite(PIN_SD_CS, HIGH);
   delay(20);
 
-  const uint32_t rates[3] = {400000, 1000000, SD_CLOCK_HZ};
+  const uint32_t rates[4] = {400000, 1000000, 4000000, SD_CLOCK_HZ};
   g_ready = false;
 
   sdSpi.begin(PIN_SD_SCK, PIN_SD_MISO, PIN_SD_MOSI, PIN_SD_CS);
-  for (uint8_t i = 0; i < 3 && !g_ready; i++) {
-    Serial.printf("sd: dedicated bus %lu Hz ... ", (unsigned long)rates[i]);
+  for (uint8_t i = 0; i < 4 && !g_ready; i++) {
+    Serial.printf("sd: %lu Hz ... ", (unsigned long)rates[i]);
     if (SD.begin(PIN_SD_CS, sdSpi, rates[i])) {
       g_ready = true;
       Serial.println("mounted");
@@ -112,21 +112,7 @@ bool begin() {
   }
 
   if (!g_ready) {
-    sdSpi.end();
-    for (uint8_t i = 0; i < 3 && !g_ready; i++) {
-      Serial.printf("sd: shared bus %lu Hz ... ", (unsigned long)rates[i]);
-      if (SD.begin(PIN_SD_CS, SPI, rates[i])) {
-        g_ready = true;
-        Serial.println("mounted");
-      } else {
-        Serial.println("no");
-        delay(150);
-      }
-    }
-  }
-
-  if (!g_ready) {
-    Serial.println("sd: nothing mounted. run firmware/tools/sdtest for detail.");
+    Serial.println("sd: not mounted. run firmware/tools/sdtest");
     return false;
   }
 

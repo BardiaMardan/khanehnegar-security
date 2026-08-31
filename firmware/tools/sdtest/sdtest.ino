@@ -2,48 +2,41 @@
 #include <SD.h>
 
 #define SD_CS    27
-#define SD_SCK   14
 #define SD_MOSI  13
 #define SD_MISO  32
+#define SD_SCK   14
 
-#define TFT_SCK  18
-#define TFT_MOSI 23
-#define TFT_MISO 19
+static SPIClass bus(HSPI);
 
 static void banner(const char *s) {
   Serial.println();
-  Serial.println("========================================");
+  Serial.println("----------------------------------------");
   Serial.println(s);
-  Serial.println("========================================");
+  Serial.println("----------------------------------------");
 }
 
-static void lineCheck(int sck, int mosi, int miso, int cs) {
-  Serial.printf("pins  sck=%d mosi=%d miso=%d cs=%d\n", sck, mosi, miso, cs);
-  pinMode(cs, OUTPUT);
-  digitalWrite(cs, HIGH);
+static void lineCheck() {
+  Serial.printf("cs=%d mosi=%d miso=%d sck=%d\n", SD_CS, SD_MOSI, SD_MISO, SD_SCK);
+  pinMode(SD_CS, OUTPUT);
+  digitalWrite(SD_CS, HIGH);
 
-  pinMode(miso, INPUT);
-  delay(5);
-  const int floatRead = digitalRead(miso);
-  pinMode(miso, INPUT_PULLDOWN);
-  delay(5);
-  const int pulledDown = digitalRead(miso);
-  pinMode(miso, INPUT);
+  pinMode(SD_MISO, INPUT_PULLDOWN);
+  delay(10);
+  const int held = digitalRead(SD_MISO);
+  pinMode(SD_MISO, INPUT);
 
-  Serial.printf("miso floating        = %d\n", floatRead);
-  Serial.printf("miso with pulldown   = %d\n", pulledDown);
-  if (pulledDown == 1) {
-    Serial.println("  miso is held high by something external.");
-    Serial.println("  That means a card or module is driving it. Good sign.");
+  Serial.printf("miso against a pulldown = %d\n", held);
+  if (held) {
+    Serial.println("something external is driving miso high, module has power");
   } else {
-    Serial.println("  miso follows our pulldown, so nothing external is on it.");
-    Serial.println("  Either the wire is missing or the slot is unpowered.");
+    Serial.println("nothing is driving miso");
+    Serial.println("check the miso wire and that 3V3 reaches the module");
   }
 }
 
-static uint8_t sdCmd(SPIClass &bus, uint8_t cmd, uint32_t arg, uint8_t crc) {
+static uint8_t cmd(uint8_t index, uint32_t arg, uint8_t crc) {
   bus.transfer(0xFF);
-  bus.transfer(0x40 | cmd);
+  bus.transfer(0x40 | index);
   bus.transfer(arg >> 24);
   bus.transfer(arg >> 16);
   bus.transfer(arg >> 8);
@@ -56,136 +49,116 @@ static uint8_t sdCmd(SPIClass &bus, uint8_t cmd, uint32_t arg, uint8_t crc) {
   return 0xFF;
 }
 
-static bool rawProbe(SPIClass &bus, int sck, int mosi, int miso, int cs) {
+static bool probe() {
   bus.end();
-  bus.begin(sck, miso, mosi, -1);
-  pinMode(cs, OUTPUT);
-  digitalWrite(cs, HIGH);
+  bus.begin(SD_SCK, SD_MISO, SD_MOSI, -1);
+  pinMode(SD_CS, OUTPUT);
+  digitalWrite(SD_CS, HIGH);
 
   bus.beginTransaction(SPISettings(400000, MSBFIRST, SPI_MODE0));
   for (int i = 0; i < 12; i++) bus.transfer(0xFF);
-  digitalWrite(cs, LOW);
-  const uint8_t r1 = sdCmd(bus, 0, 0, 0x95);
-  digitalWrite(cs, HIGH);
+  digitalWrite(SD_CS, LOW);
+  const uint8_t r1 = cmd(0, 0, 0x95);
+  digitalWrite(SD_CS, HIGH);
   bus.endTransaction();
 
   Serial.printf("CMD0 reply = 0x%02X   ", r1);
-  if (r1 == 0x01) {
-    Serial.println("CARD RESPONDED. The card and wiring are fine.");
-    return true;
-  }
-  if (r1 == 0xFF) {
-    Serial.println("silence. No card is reachable on these pins.");
-    return false;
-  }
-  Serial.println("something answered but not idle state.");
+  if (r1 == 0x01) { Serial.println("card answered, wiring is good"); return true; }
+  if (r1 == 0xFF) { Serial.println("silence, nothing reachable"); return false; }
+  Serial.println("unexpected reply");
   return false;
 }
 
-static bool tryMount(SPIClass &bus, int sck, int mosi, int miso, int cs, uint32_t hz) {
+static bool mountAt(uint32_t hz) {
   bus.end();
-  bus.begin(sck, miso, mosi, cs);
-  pinMode(cs, OUTPUT);
-  digitalWrite(cs, HIGH);
+  delay(250);
+  bus.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
+  pinMode(SD_CS, OUTPUT);
+  digitalWrite(SD_CS, HIGH);
   delay(20);
 
-  const bool ok = SD.begin(cs, bus, hz);
-  Serial.printf("  mount at %7lu Hz : %s\n", (unsigned long)hz, ok ? "OK" : "fail");
-  if (!ok) return false;
+  const bool ok = SD.begin(SD_CS, bus, hz);
+  Serial.printf("mount %8lu Hz : %s\n", (unsigned long)hz, ok ? "OK" : "fail");
+  return ok;
+}
 
-  const uint8_t type = SD.cardType();
-  const char *name = type == CARD_NONE ? "NONE"
-                   : type == CARD_MMC  ? "MMC"
-                   : type == CARD_SD   ? "SDSC"
-                   : type == CARD_SDHC ? "SDHC" : "UNKNOWN";
-  Serial.printf("  card type  : %s\n", name);
-  Serial.printf("  card size  : %llu MB\n", SD.cardSize() / (1024ULL * 1024ULL));
+static void report() {
+  const uint8_t t = SD.cardType();
+  Serial.printf("type      : %s\n", t == CARD_NONE ? "NONE"
+                                  : t == CARD_MMC  ? "MMC"
+                                  : t == CARD_SD   ? "SDSC"
+                                  : t == CARD_SDHC ? "SDHC" : "UNKNOWN");
+  Serial.printf("size      : %llu MB\n", SD.cardSize() / (1024ULL * 1024ULL));
+  Serial.printf("used      : %llu MB\n", SD.usedBytes() / (1024ULL * 1024ULL));
 
   File root = SD.open("/");
   if (root) {
-    Serial.println("  root listing:");
+    Serial.println("root      :");
     File e = root.openNextFile();
     int n = 0;
-    while (e && n < 12) {
-      Serial.printf("    %s%s\n", e.isDirectory() ? "[dir] " : "      ", e.name());
+    while (e && n < 16) {
+      Serial.printf("            %s%s\n", e.isDirectory() ? "[dir] " : "      ", e.name());
       e = root.openNextFile();
       n++;
     }
-    if (n == 0) Serial.println("    (empty)");
+    if (!n) Serial.println("            (empty)");
     root.close();
   }
-  SD.end();
-  return true;
+
+  if (SD.exists("/khaneh/config.ini")) Serial.println("config    : /khaneh/config.ini found");
+  else Serial.println("config    : /khaneh/config.ini NOT found, copy sdcard-example");
+
+  File w = SD.open("/sdtest.txt", FILE_WRITE);
+  if (!w) { Serial.println("write     : FAILED"); return; }
+  w.println("khanehnegar write test");
+  w.close();
+
+  File r = SD.open("/sdtest.txt", FILE_READ);
+  if (r) {
+    Serial.printf("readback  : %s", r.readString().c_str());
+    r.close();
+  }
+  SD.remove("/sdtest.txt");
+  Serial.println("write     : OK");
 }
 
 void setup() {
   Serial.begin(115200);
   delay(600);
 
-  banner("SD DIAGNOSTIC");
-  Serial.println("ALL FOUR WIRES MUST BE CONNECTED for this to mean anything:");
-  Serial.printf("  SD_SCK->%d  SD_MOSI->%d  SD_MISO->%d  SD_CS->%d\n",
-                SD_SCK, SD_MOSI, SD_MISO, SD_CS);
+  banner("EXTERNAL SD MODULE TEST");
+  Serial.println("power the module from 3V3, leave its 5V pin unconnected");
 
-  SPIClass hspi(HSPI);
-  SPIClass vspi(VSPI);
+  banner("1. LINE CHECK");
+  lineCheck();
 
-  banner("A. LINE CHECK, dedicated pins");
-  lineCheck(SD_SCK, SD_MOSI, SD_MISO, SD_CS);
+  banner("2. RAW PROBE");
+  const bool alive = probe();
 
-  banner("B. RAW CARD PROBE, dedicated pins");
-  Serial.println("Sends CMD0 by hand. This is the real health test.");
-  const bool aliveA = rawProbe(hspi, SD_SCK, SD_MOSI, SD_MISO, SD_CS);
-
-  bool aliveB = false;
-  if (!aliveA) {
-    banner("C. RAW CARD PROBE, shared TFT bus");
-    aliveB = rawProbe(vspi, TFT_SCK, TFT_MOSI, TFT_MISO, SD_CS);
+  banner("3. MOUNT");
+  bool ok = false;
+  if (alive) {
+    const uint32_t rates[4] = {400000, 1000000, 4000000, 8000000};
+    for (uint8_t i = 0; i < 4 && !ok; i++) ok = mountAt(rates[i]);
   } else {
+    Serial.println("skipped, card never answered");
+  }
+
+  banner("4. RESULT");
+  if (ok) {
+    report();
     Serial.println();
-    Serial.println("Skipping the shared bus probe: the dedicated pins work and");
-    Serial.println("probing another bus on the same CS would disturb the card.");
-  }
-
-  bool mounted = false;
-
-  if (aliveA) {
-    banner("D. MOUNT, dedicated pins");
-    hspi.end();
-    delay(300);
-    mounted |= tryMount(hspi, SD_SCK, SD_MOSI, SD_MISO, SD_CS, 400000);
-    if (!mounted) {
-      delay(300);
-      mounted |= tryMount(hspi, SD_SCK, SD_MOSI, SD_MISO, SD_CS, 1000000);
-    }
-    if (!mounted) {
-      delay(300);
-      mounted |= tryMount(hspi, SD_SCK, SD_MOSI, SD_MISO, SD_CS, 4000000);
-    }
-  }
-  if (!mounted && aliveB) {
-    banner("D. MOUNT, shared TFT bus");
-    mounted |= tryMount(vspi, TFT_SCK, TFT_MOSI, TFT_MISO, SD_CS, 400000);
-    if (!mounted) mounted |= tryMount(vspi, TFT_SCK, TFT_MOSI, TFT_MISO, SD_CS, 4000000);
-  }
-
-  banner("VERDICT");
-  if (mounted) {
-    Serial.println("Working. Note which bus succeeded above.");
-  } else if (aliveA || aliveB) {
-    Serial.println("The card ANSWERS but will not mount.");
-    Serial.println("That is a filesystem problem, not wiring.");
-    Serial.println("Reformat as FAT32 with a 32KB allocation unit.");
+    Serial.println("working, flash firmware/hub next");
+    SD.end();
+  } else if (alive) {
+    Serial.println("card answers but will not mount");
+    Serial.println("reformat FAT32 with an MBR partition table");
   } else {
-    Serial.println("The card never answered CMD0 on either bus.");
-    Serial.println("Nothing electrical is reaching a card. Check, in order:");
-    Serial.println(" 1. Are all four wires actually connected right now?");
-    Serial.println(" 2. Is the slot getting 3.3V? Measure it.");
-    Serial.println(" 3. Are you on the correct silkscreen pads for the SD slot,");
-    Serial.println("    not the T_ touch pads?");
-    Serial.println(" 4. Is the card fully seated? These push-push slots");
-    Serial.println("    latch, and a half-insert looks seated.");
-    Serial.println(" 5. Try the card in a computer to confirm it is readable.");
+    Serial.println("no card reachable");
+    Serial.println(" 1. module on 3V3, not 5V");
+    Serial.println(" 2. all four signal wires seated");
+    Serial.println(" 3. card pushed in until it clicks");
+    Serial.println(" 4. try 5V if 3V3 gives nothing");
   }
 }
 
