@@ -5,6 +5,9 @@
 #define PIN_FP_TOUCH   22
 #define FP_BAUD        57600
 
+#define PIN_SD_SCK     14
+#define PIN_SD_MOSI    13
+#define PIN_SD_MISO    32
 #define PIN_SD_CS      27
 #define SD_CLOCK_HZ    4000000
 

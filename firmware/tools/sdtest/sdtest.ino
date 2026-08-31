@@ -17,49 +17,69 @@ static void banner(const char *s) {
   Serial.println("========================================");
 }
 
-static void pinReport(int sck, int mosi, int miso, int cs) {
+static void lineCheck(int sck, int mosi, int miso, int cs) {
   Serial.printf("pins  sck=%d mosi=%d miso=%d cs=%d\n", sck, mosi, miso, cs);
-
   pinMode(cs, OUTPUT);
-  pinMode(miso, INPUT_PULLUP);
-  delay(5);
-
-  digitalWrite(cs, HIGH);
-  delay(5);
-  const int idleHigh = digitalRead(miso);
-
-  digitalWrite(cs, LOW);
-  delay(5);
-  const int selLow = digitalRead(miso);
   digitalWrite(cs, HIGH);
 
-  Serial.printf("miso with cs high = %d   (expect 1)\n", idleHigh);
-  Serial.printf("miso with cs low  = %d\n", selLow);
+  pinMode(miso, INPUT);
+  delay(5);
+  const int floatRead = digitalRead(miso);
+  pinMode(miso, INPUT_PULLDOWN);
+  delay(5);
+  const int pulledDown = digitalRead(miso);
+  pinMode(miso, INPUT);
 
-  if (idleHigh == 0) {
-    Serial.println("VERDICT: miso is stuck LOW.");
-    Serial.println("  Either miso is not connected to the card at all,");
-    Serial.println("  or it is shorted to ground, or the card has no power.");
+  Serial.printf("miso floating        = %d\n", floatRead);
+  Serial.printf("miso with pulldown   = %d\n", pulledDown);
+  if (pulledDown == 1) {
+    Serial.println("  miso is held high by something external.");
+    Serial.println("  That means a card or module is driving it. Good sign.");
   } else {
-    Serial.println("miso idles high, so the line is at least pulled up.");
+    Serial.println("  miso follows our pulldown, so nothing external is on it.");
+    Serial.println("  Either the wire is missing or the slot is unpowered.");
   }
+}
 
-  pinMode(mosi, INPUT_PULLUP);
-  pinMode(sck, INPUT_PULLUP);
-  delay(5);
-  Serial.printf("mosi idle = %d   sck idle = %d   (both expect 1)\n",
-                digitalRead(mosi), digitalRead(sck));
-
-  pinMode(sck, OUTPUT);
-  digitalWrite(sck, LOW);
-  delay(2);
-  const int misoAfterSckLow = digitalRead(miso);
-  const int mosiAfterSckLow = digitalRead(mosi);
-  digitalWrite(sck, HIGH);
-  if (misoAfterSckLow == 0 || mosiAfterSckLow == 0) {
-    Serial.println("WARNING: driving sck low pulled another line low.");
-    Serial.println("  Those two pins are shorted together.");
+static uint8_t sdCmd(SPIClass &bus, uint8_t cmd, uint32_t arg, uint8_t crc) {
+  bus.transfer(0xFF);
+  bus.transfer(0x40 | cmd);
+  bus.transfer(arg >> 24);
+  bus.transfer(arg >> 16);
+  bus.transfer(arg >> 8);
+  bus.transfer(arg);
+  bus.transfer(crc);
+  for (int i = 0; i < 12; i++) {
+    const uint8_t r = bus.transfer(0xFF);
+    if (!(r & 0x80)) return r;
   }
+  return 0xFF;
+}
+
+static bool rawProbe(SPIClass &bus, int sck, int mosi, int miso, int cs) {
+  bus.end();
+  bus.begin(sck, miso, mosi, -1);
+  pinMode(cs, OUTPUT);
+  digitalWrite(cs, HIGH);
+
+  bus.beginTransaction(SPISettings(400000, MSBFIRST, SPI_MODE0));
+  for (int i = 0; i < 12; i++) bus.transfer(0xFF);
+  digitalWrite(cs, LOW);
+  const uint8_t r1 = sdCmd(bus, 0, 0, 0x95);
+  digitalWrite(cs, HIGH);
+  bus.endTransaction();
+
+  Serial.printf("CMD0 reply = 0x%02X   ", r1);
+  if (r1 == 0x01) {
+    Serial.println("CARD RESPONDED. The card and wiring are fine.");
+    return true;
+  }
+  if (r1 == 0xFF) {
+    Serial.println("silence. No card is reachable on these pins.");
+    return false;
+  }
+  Serial.println("something answered but not idle state.");
+  return false;
 }
 
 static bool tryMount(SPIClass &bus, int sck, int mosi, int miso, int cs, uint32_t hz) {
@@ -80,7 +100,6 @@ static bool tryMount(SPIClass &bus, int sck, int mosi, int miso, int cs, uint32_
                    : type == CARD_SDHC ? "SDHC" : "UNKNOWN";
   Serial.printf("  card type  : %s\n", name);
   Serial.printf("  card size  : %llu MB\n", SD.cardSize() / (1024ULL * 1024ULL));
-  Serial.printf("  used bytes : %llu\n", SD.usedBytes());
 
   File root = SD.open("/");
   if (root) {
@@ -88,25 +107,13 @@ static bool tryMount(SPIClass &bus, int sck, int mosi, int miso, int cs, uint32_
     File e = root.openNextFile();
     int n = 0;
     while (e && n < 12) {
-      Serial.printf("    %s%s  %u\n", e.isDirectory() ? "[dir] " : "      ",
-                    e.name(), (unsigned)e.size());
+      Serial.printf("    %s%s\n", e.isDirectory() ? "[dir] " : "      ", e.name());
       e = root.openNextFile();
       n++;
     }
     if (n == 0) Serial.println("    (empty)");
     root.close();
   }
-
-  File w = SD.open("/sdtest.txt", FILE_WRITE);
-  if (w) {
-    w.println("write ok");
-    w.close();
-    Serial.println("  write test : OK");
-    SD.remove("/sdtest.txt");
-  } else {
-    Serial.println("  write test : FAILED (card may be locked or full)");
-  }
-
   SD.end();
   return true;
 }
@@ -116,42 +123,56 @@ void setup() {
   delay(600);
 
   banner("SD DIAGNOSTIC");
-  Serial.println("If every mount fails, read the electrical section above the");
-  Serial.println("attempts. That tells you wiring versus card versus module.");
+  Serial.println("ALL FOUR WIRES MUST BE CONNECTED for this to mean anything:");
+  Serial.printf("  SD_SCK->%d  SD_MOSI->%d  SD_MISO->%d  SD_CS->%d\n",
+                SD_SCK, SD_MOSI, SD_MISO, SD_CS);
 
-  banner("ELECTRICAL CHECK  (HSPI pins)");
-  pinReport(SD_SCK, SD_MOSI, SD_MISO, SD_CS);
-
-  banner("MOUNT ATTEMPTS  HSPI 14/13/32 cs 27");
   SPIClass hspi(HSPI);
-  bool any = false;
-  any |= tryMount(hspi, SD_SCK, SD_MOSI, SD_MISO, SD_CS, 400000);
-  if (!any) any |= tryMount(hspi, SD_SCK, SD_MOSI, SD_MISO, SD_CS, 1000000);
-  if (!any) any |= tryMount(hspi, SD_SCK, SD_MOSI, SD_MISO, SD_CS, 4000000);
+  SPIClass vspi(VSPI);
 
-  if (!any) {
-    banner("MOUNT ATTEMPTS  shared TFT bus 18/23/19 cs 27");
-    Serial.println("This checks whether the board bridges SD to the TFT bus.");
-    SPIClass vspi(VSPI);
-    any |= tryMount(vspi, TFT_SCK, TFT_MOSI, TFT_MISO, SD_CS, 400000);
-    if (!any) any |= tryMount(vspi, TFT_SCK, TFT_MOSI, TFT_MISO, SD_CS, 4000000);
+  banner("A. LINE CHECK, dedicated pins");
+  lineCheck(SD_SCK, SD_MOSI, SD_MISO, SD_CS);
+
+  banner("B. RAW CARD PROBE, dedicated pins");
+  Serial.println("Sends CMD0 by hand. This is the real health test.");
+  const bool aliveA = rawProbe(hspi, SD_SCK, SD_MOSI, SD_MISO, SD_CS);
+
+  banner("C. RAW CARD PROBE, shared TFT bus");
+  const bool aliveB = rawProbe(vspi, TFT_SCK, TFT_MOSI, TFT_MISO, SD_CS);
+
+  bool mounted = false;
+
+  if (aliveA) {
+    banner("D. MOUNT, dedicated pins");
+    mounted |= tryMount(hspi, SD_SCK, SD_MOSI, SD_MISO, SD_CS, 400000);
+    if (!mounted) mounted |= tryMount(hspi, SD_SCK, SD_MOSI, SD_MISO, SD_CS, 4000000);
+  }
+  if (!mounted && aliveB) {
+    banner("D. MOUNT, shared TFT bus");
+    mounted |= tryMount(vspi, TFT_SCK, TFT_MOSI, TFT_MISO, SD_CS, 400000);
+    if (!mounted) mounted |= tryMount(vspi, TFT_SCK, TFT_MOSI, TFT_MISO, SD_CS, 4000000);
   }
 
-  banner(any ? "RESULT: a working configuration was found"
-             : "RESULT: nothing mounted");
-
-  if (!any) {
-    Serial.println("Work through these in order:");
-    Serial.println(" 1. Card format. 64GB and larger ship as exFAT, which is");
-    Serial.println("    not supported. Reformat as FAT32.");
-    Serial.println(" 2. Card seated fully, and the slot has 3.3V.");
-    Serial.println(" 3. Try a different card. Very old and very new cards both fail.");
-    Serial.println(" 4. Check the four jumpers against the board silkscreen again.");
-    Serial.println(" 5. If miso read 0 in the electrical check, the fault is");
-    Serial.println("    wiring or power, not software.");
+  banner("VERDICT");
+  if (mounted) {
+    Serial.println("Working. Note which bus succeeded above.");
+  } else if (aliveA || aliveB) {
+    Serial.println("The card ANSWERS but will not mount.");
+    Serial.println("That is a filesystem problem, not wiring.");
+    Serial.println("Reformat as FAT32 with a 32KB allocation unit.");
+  } else {
+    Serial.println("The card never answered CMD0 on either bus.");
+    Serial.println("Nothing electrical is reaching a card. Check, in order:");
+    Serial.println(" 1. Are all four wires actually connected right now?");
+    Serial.println(" 2. Is the slot getting 3.3V? Measure it.");
+    Serial.println(" 3. Are you on the correct silkscreen pads for the SD slot,");
+    Serial.println("    not the T_ touch pads?");
+    Serial.println(" 4. Is the card fully seated? These push-push slots");
+    Serial.println("    latch, and a half-insert looks seated.");
+    Serial.println(" 5. Try the card in a computer to confirm it is readable.");
   }
 }
 
 void loop() {
-  delay(5000);
+  delay(10000);
 }

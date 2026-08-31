@@ -12,6 +12,7 @@ namespace Store {
 #define FP_SLOTS    16
 
 static bool      g_ready = false;
+static SPIClass  sdSpi(HSPI);
 static HubConfig g_cfg;
 
 static uint16_t g_ids[FP_SLOTS];
@@ -97,24 +98,39 @@ bool begin() {
 
   const uint32_t rates[3] = {400000, 1000000, SD_CLOCK_HZ};
   g_ready = false;
+
+  sdSpi.begin(PIN_SD_SCK, PIN_SD_MISO, PIN_SD_MOSI, PIN_SD_CS);
   for (uint8_t i = 0; i < 3 && !g_ready; i++) {
-    Serial.printf("sd: trying shared bus cs=%d at %lu Hz ... ",
-                  PIN_SD_CS, (unsigned long)rates[i]);
-    if (SD.begin(PIN_SD_CS, SPI, rates[i])) {
+    Serial.printf("sd: dedicated bus %lu Hz ... ", (unsigned long)rates[i]);
+    if (SD.begin(PIN_SD_CS, sdSpi, rates[i])) {
       g_ready = true;
       Serial.println("mounted");
     } else {
       Serial.println("no");
-      delay(200);
+      delay(150);
     }
   }
+
+  if (!g_ready) {
+    sdSpi.end();
+    for (uint8_t i = 0; i < 3 && !g_ready; i++) {
+      Serial.printf("sd: shared bus %lu Hz ... ", (unsigned long)rates[i]);
+      if (SD.begin(PIN_SD_CS, SPI, rates[i])) {
+        g_ready = true;
+        Serial.println("mounted");
+      } else {
+        Serial.println("no");
+        delay(150);
+      }
+    }
+  }
+
   if (!g_ready) {
     Serial.println("sd: nothing mounted. run firmware/tools/sdtest for detail.");
     return false;
   }
 
-  const uint8_t type = SD.cardType();
-  Serial.printf("sd: type=%u size=%lluMB\n", type,
+  Serial.printf("sd: type=%u size=%lluMB\n", SD.cardType(),
                 SD.cardSize() / (1024ULL * 1024ULL));
 
   if (!SD.exists("/khaneh")) SD.mkdir("/khaneh");
