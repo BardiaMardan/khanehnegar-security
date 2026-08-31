@@ -25,3 +25,9 @@ calibration.json
 .DS_Store
 Thumbs.db
 *.swp
+
+node_modules/
+.next/
+dashboard/data/
+.env
+.env.local
