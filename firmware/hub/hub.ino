@@ -5,7 +5,7 @@
 #include "nodes.h"
 #include "state.h"
 #include "io.h"
-#include "ui.h"
+#include "src/ui/ui.h"
 #include "fp.h"
 #include "climate.h"
 #include "net.h"
@@ -58,8 +58,11 @@ void setup() {
   IO::begin();
   UI::begin();
 
-  Serial.printf("sd card: %s\n", Store::begin() ? "ok" : "MISSING");
+  UI::boot("storage");
+  const bool sd = Store::begin();
+  Serial.printf("sd card: %s\n", sd ? "ok" : "MISSING");
 
+  UI::boot("radio");
   if (!SecMesh.begin(KIND_HUB, onMeshRx)) {
     Serial.println("FATAL: ESP-NOW would not start");
   }
@@ -69,18 +72,23 @@ void setup() {
   Nodes::begin();
   Sec::begin();
 
+  UI::boot("fingerprint");
   FP::begin();
   Serial.printf("fingerprint: %s, %d templates\n",
                 FP::present() ? "ok" : "NOT RESPONDING", FP::templateCount());
 
+  UI::boot("sensors");
   Climate::begin();
 
   pinMode(PIN_TAMPER, INPUT_PULLUP);
   tamperLast = digitalRead(PIN_TAMPER) == HIGH;
 
+  UI::boot("network");
   Net::begin();
 
-  UI::invalidate();
+  UI::boot("ready");
+  delay(400);
+  UI::ready();
 }
 
 static void handleFingerprint() {
