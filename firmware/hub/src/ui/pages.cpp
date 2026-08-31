@@ -52,10 +52,15 @@ void drawStatus(bool full) {
   if (w) tft.fillRect(8, 86, w, 8, rc);
   if (w < 224) tft.fillRect(8 + w, 86, 224 - w, 8, COL_BG);
 
-  String aux = String(Nodes::liveCount()) + " modules";
-  if (Nodes::deadCount()) aux += ", " + String(Nodes::deadCount()) + " lost";
-  if (Climate::valid()) aux += "   " + String((int)Climate::tempC()) + "C";
-  aux += Net::online() ? "   net" : "   no net";
+  String aux = String(Nodes::liveCount()) + " mod";
+  if (Nodes::deadCount()) aux += "/" + String(Nodes::deadCount()) + " lost";
+  if (Climate::valid()) {
+    aux += "  " + String((int)Climate::tempC()) + "C " +
+                  String((int)Climate::humidity()) + "%";
+  } else {
+    aux += "  --C --%";
+  }
+  aux += Net::online() ? "  net" : "  no net";
   label(8, 102, aux, Net::online() ? COL_DIM : COL_WARN, 2, 224);
 
   for (int row = 0; row < 4; row++) {

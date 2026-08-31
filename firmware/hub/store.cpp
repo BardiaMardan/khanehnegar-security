@@ -1,5 +1,6 @@
 #include "store.h"
 #include "config.h"
+#include "secrets.h"
 #include <SPI.h>
 #include <SD.h>
 
@@ -10,7 +11,6 @@ namespace Store {
 #define EVENT_PATH  "/khaneh/events.csv"
 #define FP_SLOTS    16
 
-static SPIClass  sdSpi(HSPI);
 static bool      g_ready = false;
 static HubConfig g_cfg;
 
@@ -86,18 +86,36 @@ bool begin() {
   g_cfg.siteName     = "khanehnegar";
   g_cfg.timezone     = "Asia/Tehran";
   g_cfg.duressFinger = 0;
+  g_cfg.wifiSsid     = FALLBACK_WIFI_SSID;
+  g_cfg.wifiPass     = FALLBACK_WIFI_PASS;
+  g_cfg.serverUrl    = FALLBACK_SERVER_URL;
+  g_cfg.apiKey       = FALLBACK_API_KEY;
 
-  pinMode(PIN_SD_MISO, INPUT_PULLUP);
   pinMode(PIN_SD_CS, OUTPUT);
   digitalWrite(PIN_SD_CS, HIGH);
-  sdSpi.begin(PIN_SD_SCK, PIN_SD_MISO, PIN_SD_MOSI, PIN_SD_CS);
+  delay(20);
 
+  const uint32_t rates[3] = {400000, 1000000, SD_CLOCK_HZ};
   g_ready = false;
-  for (int attempt = 0; attempt < 3 && !g_ready; attempt++) {
-    if (SD.begin(PIN_SD_CS, sdSpi, SD_CLOCK_HZ)) g_ready = true;
-    else delay(250);
+  for (uint8_t i = 0; i < 3 && !g_ready; i++) {
+    Serial.printf("sd: trying shared bus cs=%d at %lu Hz ... ",
+                  PIN_SD_CS, (unsigned long)rates[i]);
+    if (SD.begin(PIN_SD_CS, SPI, rates[i])) {
+      g_ready = true;
+      Serial.println("mounted");
+    } else {
+      Serial.println("no");
+      delay(200);
+    }
   }
-  if (!g_ready) return false;
+  if (!g_ready) {
+    Serial.println("sd: nothing mounted. run firmware/tools/sdtest for detail.");
+    return false;
+  }
+
+  const uint8_t type = SD.cardType();
+  Serial.printf("sd: type=%u size=%lluMB\n", type,
+                SD.cardSize() / (1024ULL * 1024ULL));
 
   if (!SD.exists("/khaneh")) SD.mkdir("/khaneh");
   readIni(CFG_PATH, applyConfig);
