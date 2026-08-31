@@ -137,15 +137,31 @@ void setup() {
   Serial.println("Sends CMD0 by hand. This is the real health test.");
   const bool aliveA = rawProbe(hspi, SD_SCK, SD_MOSI, SD_MISO, SD_CS);
 
-  banner("C. RAW CARD PROBE, shared TFT bus");
-  const bool aliveB = rawProbe(vspi, TFT_SCK, TFT_MOSI, TFT_MISO, SD_CS);
+  bool aliveB = false;
+  if (!aliveA) {
+    banner("C. RAW CARD PROBE, shared TFT bus");
+    aliveB = rawProbe(vspi, TFT_SCK, TFT_MOSI, TFT_MISO, SD_CS);
+  } else {
+    Serial.println();
+    Serial.println("Skipping the shared bus probe: the dedicated pins work and");
+    Serial.println("probing another bus on the same CS would disturb the card.");
+  }
 
   bool mounted = false;
 
   if (aliveA) {
     banner("D. MOUNT, dedicated pins");
+    hspi.end();
+    delay(300);
     mounted |= tryMount(hspi, SD_SCK, SD_MOSI, SD_MISO, SD_CS, 400000);
-    if (!mounted) mounted |= tryMount(hspi, SD_SCK, SD_MOSI, SD_MISO, SD_CS, 4000000);
+    if (!mounted) {
+      delay(300);
+      mounted |= tryMount(hspi, SD_SCK, SD_MOSI, SD_MISO, SD_CS, 1000000);
+    }
+    if (!mounted) {
+      delay(300);
+      mounted |= tryMount(hspi, SD_SCK, SD_MOSI, SD_MISO, SD_CS, 4000000);
+    }
   }
   if (!mounted && aliveB) {
     banner("D. MOUNT, shared TFT bus");
