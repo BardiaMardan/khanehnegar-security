@@ -6,14 +6,16 @@
     "dev": "next dev -H 0.0.0.0 -p 3000",
     "build": "next build",
     "start": "next start -H 0.0.0.0 -p 3000",
-    "auth:migrate": "npx @better-auth/cli@latest migrate --config lib/auth.js -y",
-    "auth:seed": "node --env-file=.env.local scripts/seed.mjs"
+    "auth:migrate": "node --env-file=.env.local scripts/migrate.mjs",
+    "auth:seed": "node --env-file=.env.local scripts/seed.mjs",
+    "setup": "npm run auth:migrate && npm run auth:seed"
   },
   "dependencies": {
     "better-auth": "1.2.7",
     "better-sqlite3": "11.8.1",
     "next": "15.1.6",
     "react": "19.0.0",
-    "react-dom": "19.0.0"
+    "react-dom": "19.0.0",
+    "zod": "3.25.76"
   }
 }

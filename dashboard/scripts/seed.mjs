@@ -1,7 +1,5 @@
-import fs from 'fs'
-import path from 'path'
-import Database from 'better-sqlite3'
 import { betterAuth } from 'better-auth'
+import { authConfig } from '../lib/auth-config.js'
 
 const email = process.env.ADMIN_EMAIL
 const password = process.env.ADMIN_PASSWORD
@@ -11,13 +9,10 @@ if (!email || !password) {
   process.exit(1)
 }
 
-const dir = path.join(process.cwd(), 'data')
-fs.mkdirSync(dir, { recursive: true })
-
 const seeder = betterAuth({
-  appName: 'khanehnegar',
-  database: new Database(path.join(dir, 'auth.db')),
-  emailAndPassword: { enabled: true, minPasswordLength: 10 },
+  ...authConfig,
+  emailAndPassword: { ...authConfig.emailAndPassword, disableSignUp: false },
+  rateLimit: { enabled: false },
 })
 
 const result = await seeder.api
@@ -25,8 +20,12 @@ const result = await seeder.api
   .catch((err) => ({ error: err }))
 
 if (result?.error) {
-  console.error('could not create the account:', result.error.message || result.error)
-  console.error('if it already exists, this is expected')
+  const message = result.error.message || result.error.body?.message || String(result.error)
+  if (/exist/i.test(message)) {
+    console.log(`admin account already exists: ${email}`)
+    process.exit(0)
+  }
+  console.error('could not create the account:', message)
   process.exit(1)
 }
 
