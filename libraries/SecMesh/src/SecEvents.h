@@ -26,15 +26,19 @@ enum SecEvent : uint8_t {
   EV_RF_JAM        = 22,
   EV_NODE_LOST     = 23,
 
-  EV_PANIC         = 30,
-  EV_DURESS        = 31,
-  EV_CODE_ATTACK   = 32,
-  EV_ACCESS_OK     = 33,
-  EV_ACCESS_DENIED = 34,
-  EV_ARMED         = 35,
-  EV_DISARMED      = 36,
-  EV_LOCKDOWN      = 37,
-  EV_UNLOCKED      = 38,
+  EV_PANIC          = 30,
+  EV_CODE_ATTACK    = 32,
+  EV_ACCESS_OK      = 33,
+  EV_ACCESS_DENIED  = 34,
+  EV_ARMED          = 35,
+  EV_DISARMED       = 36,
+  EV_LOCKDOWN       = 37,
+  EV_UNLOCKED       = 38,
+  EV_PIN_CHANGED    = 39,
+  EV_FINGER_ADDED   = 40,
+  EV_FINGER_REMOVED = 41,
+  EV_APPROVED       = 42,
+  EV_DENIED         = 43,
 };
 
 enum SecCommand : uint8_t {
@@ -51,7 +55,6 @@ enum SecMode : uint8_t {
   MODE_AWAY     = 2,
   MODE_ENTRY    = 3,
   MODE_ALARM    = 4,
-  MODE_SILENT   = 5,
   MODE_LOCKDOWN = 6,
 };
 
@@ -86,16 +89,20 @@ inline const char *secEventName(uint8_t e) {
     case EV_RF_DEAUTH:     return "DEAUTH FLOOD";
     case EV_RF_JAM:        return "RF JAMMING";
     case EV_NODE_LOST:     return "MODULE LOST";
-    case EV_PANIC:         return "PANIC";
-    case EV_DURESS:        return "unlocked";
-    case EV_CODE_ATTACK:   return "CODE ATTACK";
-    case EV_ACCESS_OK:     return "unlocked";
-    case EV_ACCESS_DENIED: return "denied";
-    case EV_ARMED:         return "armed";
-    case EV_DISARMED:      return "disarmed";
-    case EV_LOCKDOWN:      return "LOCKDOWN";
-    case EV_UNLOCKED:      return "lockdown cleared";
-    default:               return "event";
+    case EV_PANIC:          return "PANIC";
+    case EV_CODE_ATTACK:    return "CODE ATTACK";
+    case EV_ACCESS_OK:      return "unlocked";
+    case EV_ACCESS_DENIED:  return "denied";
+    case EV_ARMED:          return "armed";
+    case EV_DISARMED:       return "disarmed";
+    case EV_LOCKDOWN:       return "LOCKDOWN";
+    case EV_UNLOCKED:       return "lockdown cleared";
+    case EV_PIN_CHANGED:    return "code changed";
+    case EV_FINGER_ADDED:   return "finger added";
+    case EV_FINGER_REMOVED: return "finger removed";
+    case EV_APPROVED:       return "approved";
+    case EV_DENIED:         return "refused";
+    default:                return "event";
   }
 }
 
@@ -118,7 +125,6 @@ inline const char *secModeName(uint8_t m) {
     case MODE_AWAY:     return "AWAY";
     case MODE_ENTRY:    return "ENTRY";
     case MODE_ALARM:    return "ALARM";
-    case MODE_SILENT:   return "DISARMED";
     case MODE_LOCKDOWN: return "LOCKED";
     default:            return "?";
   }

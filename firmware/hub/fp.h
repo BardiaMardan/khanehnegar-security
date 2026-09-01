@@ -15,16 +15,17 @@ bool present();
 int  templateCount();
 void tick();
 
-Result take();
+Result   take();
 uint16_t matchedId();
 uint16_t confidence();
 
-void     startEnroll(bool duress);
+void     startEnroll();
 void     cancelEnroll();
 bool     enrolling();
 uint8_t  enrollStep();
 uint16_t lastEnrolledId();
-bool     lastEnrollDuress();
 
+bool erase(uint16_t id);
 void emptyAll();
+int  adoptExisting();
 }

@@ -17,11 +17,15 @@
 
 #define PIN_LENGTH        4
 #define DEFAULT_PIN      "1234"
-#define DEFAULT_DURESS   "1235"
 #define MAX_PIN_ATTEMPTS  5
+
+#define MANAGE_SESSION_MS    60000UL
+#define APPROVAL_TIMEOUT_MS  30000UL
 
 #define FP_MAX_TEMPLATES  120
 #define FP_MIN_SCORE       50
+#define FP_SLOTS           16
+#define FP_LABEL_LEN       16
 
 #define ENTRY_DELAY_MS         20000UL
 #define EXIT_DELAY_MS          15000UL
@@ -33,9 +37,17 @@
 #define RISK_DECAY_PER_SEC     3
 #define RISK_MAX             150
 
-#define LOG_CAPACITY   24
+#define JOURNAL_CAPACITY   40
+#define JOURNAL_FLUSH_MS   3000UL
 
 #define CLIMATE_PERIOD_MS  30000UL
 #define TIME_SYNC_MS     3600000UL
 #define COMMAND_POLL_MS      5000UL
 #define UI_ROTATION            2
+
+#define NVS_NAMESPACE  "khaneh"
+
+#define CREDIT_NAME  "Bardia Mardan"
+#define CREDIT_ORG   "Kibord Hamrahaval"
+#define CREDIT_URL1  "kibordevents.com"
+#define CREDIT_URL2  "bardiamardan.xyz"

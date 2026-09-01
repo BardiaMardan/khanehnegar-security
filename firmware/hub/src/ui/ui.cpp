@@ -1,5 +1,6 @@
 #include "internal.h"
 #include "../../state.h"
+#include "../../access.h"
 #include "../../config.h"
 #include <Preferences.h>
 
@@ -12,13 +13,14 @@ bool     g_dirty    = true;
 uint8_t  g_lastMode = 255;
 String   g_pin      = "";
 
-static Page     g_drawn      = (Page)255;
-static uint32_t g_lastPaint  = 0;
-static uint32_t g_lastTouch  = 0;
-static uint32_t g_touchGuard = 0;
-static bool     g_toastShown = false;
-static uint8_t  g_bootStep   = 0;
-static bool     g_booting    = true;
+static Page     g_drawn       = (Page)255;
+static uint32_t g_lastPaint   = 0;
+static uint32_t g_lastTouch   = 0;
+static uint32_t g_touchGuard  = 0;
+static bool     g_toastShown  = false;
+static bool     g_popupShown  = false;
+static uint8_t  g_bootStep    = 0;
+static bool     g_booting     = true;
 
 bool hit(const Btn &b, int16_t x, int16_t y) {
   return x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h;
@@ -61,6 +63,14 @@ static void splashFrame() {
   tft.setTextColor(COL_DIM, COL_BG);
   tft.drawString("security terminal", SCR_W / 2, 126, 2);
   tft.drawRoundRect(28, 186, 184, 10, 3, COL_PANEL);
+
+  tft.setTextColor(COL_TEXT, COL_BG);
+  tft.drawString(CREDIT_NAME, SCR_W / 2, 246, 2);
+  tft.setTextColor(COL_DIM, COL_BG);
+  tft.drawString(CREDIT_ORG, SCR_W / 2, 264, 2);
+  tft.setTextColor(COL_ACCENT, COL_BG);
+  tft.drawString(CREDIT_URL1, SCR_W / 2, 286, 2);
+  tft.drawString(CREDIT_URL2, SCR_W / 2, 304, 2);
 }
 
 void boot(const char *step) {
@@ -126,11 +136,15 @@ void invalidate() { g_dirty = true; }
 Page page() { return g_page; }
 
 void go(Page p) {
-  if (g_page != p) { g_page = p; g_pin = ""; }
+  if (g_page != p) {
+    g_page = p;
+    g_pin = "";
+    resetKeypad();
+  }
   g_dirty = true;
 }
 
-static const char *kTabs[4] = {"STATUS", "CODE", "LOG", "NODES"};
+static const char *kTabs[4] = {"STATUS", "CODE", "LOG", "MANAGE"};
 
 static void drawNav() {
   for (int i = 0; i < 4; i++) {
@@ -160,6 +174,49 @@ static void drawToast() {
   tft.drawString(Sec::toastText(), SCR_W / 2, TOAST_Y + TOAST_H / 2, 2);
 }
 
+static const Btn kAllow = {16, 194, 98, 40, "ALLOW"};
+static const Btn kDeny  = {126, 194, 98, 40, "DENY"};
+
+static bool popupLive() { return Access::pending() && Access::granted(); }
+
+static void popupCountdown() {
+  tft.setTextDatum(MC_DATUM);
+  tft.setTextPadding(90);
+  tft.setTextColor(COL_DIM, COL_PANEL);
+  tft.drawString(String(Access::approvalMsLeft() / 1000) + "s to answer",
+                 SCR_W / 2, 174, 2);
+  tft.setTextPadding(0);
+}
+
+static void drawPopup() {
+  const Access::Approval &a = Access::approval();
+
+  tft.fillRoundRect(8, 92, 224, 152, 8, COL_PANEL);
+  tft.drawRoundRect(8, 92, 224, 152, 8, COL_WARN);
+  tft.setTextPadding(0);
+  tft.setTextDatum(MC_DATUM);
+  tft.setTextColor(COL_WARN, COL_PANEL);
+  tft.drawString("THE WEB ASKS TO", SCR_W / 2, 112, 2);
+
+  String text = a.text;
+  int cut = -1;
+  if (text.length() > 26) {
+    cut = text.lastIndexOf(' ', 26);
+    if (cut < 8) cut = 26;
+  }
+  tft.setTextColor(COL_TEXT, COL_PANEL);
+  if (cut < 0) {
+    tft.drawString(text, SCR_W / 2, 140, 2);
+  } else {
+    tft.drawString(text.substring(0, cut), SCR_W / 2, 132, 2);
+    tft.drawString(text.substring(cut + 1), SCR_W / 2, 152, 2);
+  }
+
+  popupCountdown();
+  drawBtn(kAllow, COL_OK, COL_BG);
+  drawBtn(kDeny, COL_BAD, COL_BG);
+}
+
 void tick() {
   if (g_booting) return;
   const uint32_t now = millis();
@@ -171,17 +228,41 @@ void tick() {
       const int16_t tx = (int16_t)rx;
       const int16_t ty = (int16_t)ry;
       g_touchGuard = now + 220;
-      bool handled = navTouch(tx, ty);
-      if (!handled) {
-        switch (g_page) {
-          case PAGE_STATUS: handled = statusTouch(tx, ty); break;
-          case PAGE_KEYPAD: handled = keypadTouch(tx, ty); break;
-          case PAGE_LOG:    handled = false;               break;
-          case PAGE_NODES:  handled = nodesTouch(tx, ty);  break;
+
+      if (popupLive()) {
+        if      (hit(kAllow, tx, ty)) Sec::decideApproval(true);
+        else if (hit(kDeny, tx, ty))  Sec::decideApproval(false);
+        g_dirty = true;
+      } else {
+        bool handled = navTouch(tx, ty);
+        if (!handled) {
+          switch (g_page) {
+            case PAGE_STATUS: handled = statusTouch(tx, ty); break;
+            case PAGE_KEYPAD: handled = keypadTouch(tx, ty); break;
+            case PAGE_LOG:    handled = false;               break;
+            case PAGE_MANAGE: handled = manageTouch(tx, ty); break;
+          }
         }
+        if (handled) g_dirty = true;
       }
-      if (handled) g_dirty = true;
     }
+  }
+
+  if (popupLive()) {
+    if (!g_popupShown) {
+      g_popupShown = true;
+      g_lastPaint = now;
+      drawPopup();
+    } else if (now - g_lastPaint > 400) {
+      g_lastPaint = now;
+      popupCountdown();
+    }
+    return;
+  }
+
+  if (g_popupShown) {
+    g_popupShown = false;
+    g_full = true;
   }
 
   const bool toastLive = Sec::toastAge() < TOAST_MS;
@@ -210,7 +291,7 @@ void tick() {
     case PAGE_STATUS: drawStatus(full); break;
     case PAGE_KEYPAD: drawKeypad(full); break;
     case PAGE_LOG:    drawLog(full);    break;
-    case PAGE_NODES:  drawNodes(full);  break;
+    case PAGE_MANAGE: drawManage(full); break;
   }
   if (full) drawNav();
 

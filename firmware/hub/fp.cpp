@@ -1,6 +1,6 @@
 #include "fp.h"
 #include "config.h"
-#include "store.h"
+#include "fingers.h"
 #include <Adafruit_Fingerprint.h>
 
 namespace FP {
@@ -14,13 +14,11 @@ static Result   g_result    = RES_NONE;
 static uint16_t g_matchedId = 0;
 static uint16_t g_score     = 0;
 
-static bool     g_enroll     = false;
-static bool     g_enrollDur  = false;
-static uint8_t  g_step       = 0;
-static uint16_t g_enrollId   = 0;
-static uint16_t g_lastId     = 0;
-static bool     g_lastDuress = false;
-static uint32_t g_guard      = 0;
+static bool     g_enroll    = false;
+static uint8_t  g_step      = 0;
+static uint16_t g_enrollId  = 0;
+static uint16_t g_lastId    = 0;
+static uint32_t g_guard     = 0;
 
 void begin() {
   pinMode(PIN_FP_TOUCH, INPUT);
@@ -45,19 +43,13 @@ Result take() {
 uint16_t matchedId()  { return g_matchedId; }
 uint16_t confidence() { return g_score; }
 
-static uint16_t nextFreeId() {
-  for (uint16_t id = 1; id <= FP_MAX_TEMPLATES; id++) {
-    if (!Store::fingerKnown(id)) return id;
-  }
-  return 0;
-}
+static uint16_t nextFreeId() { return Fingers::nextFreeId(); }
 
-void startEnroll(bool duress) {
+void startEnroll() {
   if (!g_present) return;
   g_enrollId = nextFreeId();
   if (g_enrollId == 0) return;
   g_enroll = true;
-  g_enrollDur = duress;
   g_step = 0;
   g_guard = 0;
 }
@@ -67,16 +59,35 @@ void cancelEnroll() {
   g_step = 0;
 }
 
-bool     enrolling()        { return g_enroll; }
-uint8_t  enrollStep()       { return g_step; }
-uint16_t lastEnrolledId()   { return g_lastId; }
-bool     lastEnrollDuress() { return g_lastDuress; }
+bool     enrolling()      { return g_enroll; }
+uint8_t  enrollStep()     { return g_step; }
+uint16_t lastEnrolledId() { return g_lastId; }
+
+bool erase(uint16_t id) {
+  if (!g_present) return false;
+  const bool ok = sensor.deleteModel(id) == FINGERPRINT_OK;
+  sensor.getTemplateCount();
+  g_count = sensor.templateCount;
+  return ok;
+}
 
 void emptyAll() {
   if (!g_present) return;
   sensor.emptyDatabase();
   sensor.getTemplateCount();
   g_count = sensor.templateCount;
+}
+
+int adoptExisting() {
+  if (!g_present || g_count <= 0) return 0;
+  int found = 0;
+  for (uint16_t id = 1; id <= FP_SLOTS && found < g_count; id++) {
+    if (Fingers::known(id)) continue;
+    if (sensor.loadModel(id) != FINGERPRINT_OK) continue;
+    Fingers::add(id, String("finger ") + String(id));
+    found++;
+  }
+  return found;
 }
 
 static void tickEnroll() {
@@ -113,7 +124,6 @@ static void tickEnroll() {
     sensor.getTemplateCount();
     g_count = sensor.templateCount;
     g_lastId = g_enrollId;
-    g_lastDuress = g_enrollDur;
     g_enroll = false;
     g_step = 0;
     g_result = RES_ENROLLED;

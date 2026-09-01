@@ -1,6 +1,8 @@
 #include "net.h"
 #include "store.h"
 #include "state.h"
+#include "access.h"
+#include "fingers.h"
 #include "config.h"
 #include <WiFi.h>
 #include <HTTPClient.h>
@@ -12,6 +14,7 @@ static uint32_t g_nextTry  = 0;
 static uint32_t g_nextSync = 0;
 static uint32_t g_nextPoll = 0;
 static bool     g_started  = false;
+static bool     g_rosterDue = true;
 
 bool online()  { return g_online; }
 int  channel() { return WiFi.channel(); }
@@ -24,13 +27,25 @@ void begin() {
   g_nextTry = millis() + 8000;
 }
 
-static long findNumber(const String &body, const char *key) {
-  const int k = body.indexOf(key);
+static bool openTo(HTTPClient &http, const char *path) {
+  const HubConfig &c = Store::config();
+  if (!g_online || c.serverUrl.length() == 0) return false;
+  http.setConnectTimeout(1200);
+  http.setTimeout(1800);
+  if (!http.begin(c.serverUrl + path)) return false;
+  http.addHeader("X-Api-Key", c.apiKey);
+  return true;
+}
+
+static long findNumber(const String &body, const char *key, int from = 0) {
+  const int k = body.indexOf(key, from);
   if (k < 0) return -1;
   int i = body.indexOf(':', k);
   if (i < 0) return -1;
   i++;
+  bool neg = false;
   while (i < (int)body.length() && (body[i] == ' ' || body[i] == '"')) i++;
+  if (i < (int)body.length() && body[i] == '-') { neg = true; i++; }
   long v = 0;
   bool any = false;
   while (i < (int)body.length() && isDigit(body[i])) {
@@ -38,31 +53,38 @@ static long findNumber(const String &body, const char *key) {
     i++;
     any = true;
   }
-  return any ? v : -1;
+  if (!any) return -1;
+  return neg ? -v : v;
+}
+
+static String findString(const String &body, const char *key, int from = 0) {
+  const int k = body.indexOf(key, from);
+  if (k < 0) return String("");
+  int i = body.indexOf(':', k);
+  if (i < 0) return String("");
+  i = body.indexOf('"', i + 1);
+  if (i < 0) return String("");
+  const int end = body.indexOf('"', i + 1);
+  if (end < 0) return String("");
+  return body.substring(i + 1, end);
+}
+
+static bool flagTrue(const String &body, const char *key) {
+  String needle = "\"";
+  needle += key;
+  needle += "\":true";
+  return body.indexOf(needle) >= 0;
 }
 
 static void syncTime() {
-  const HubConfig &c = Store::config();
-  if (c.serverUrl.length() == 0) return;
-
   HTTPClient http;
-  http.setConnectTimeout(1500);
-  http.setTimeout(2000);
-  if (!http.begin(c.serverUrl + "/api/time")) return;
-  http.addHeader("X-Api-Key", c.apiKey);
+  if (!openTo(http, "/api/time")) return;
   if (http.GET() == 200) {
     const String body = http.getString();
     const long unix = findNumber(body, "\"unix\"");
     if (unix > 1000000000L) Store::setEpoch((uint32_t)unix);
-    const int oi = body.indexOf("\"offset\"");
-    if (oi >= 0) {
-      int i = body.indexOf(':', oi) + 1;
-      bool neg = false;
-      while (i < (int)body.length() && (body[i] == ' ' || body[i] == '"')) i++;
-      if (i < (int)body.length() && body[i] == '-') { neg = true; i++; }
-      long v = 0;
-      while (i < (int)body.length() && isDigit(body[i])) { v = v * 10 + (body[i] - '0'); i++; }
-      Store::setOffsetMinutes((int16_t)(neg ? -v : v));
+    if (body.indexOf("\"offset\"") >= 0) {
+      Store::setOffsetMinutes((int16_t)findNumber(body, "\"offset\""));
     }
   }
   http.end();
@@ -70,7 +92,8 @@ static void syncTime() {
 
 void alert(bool silent, const char *kind, const char *event, uint16_t value) {
   const HubConfig &c = Store::config();
-  if (!g_online || c.serverUrl.length() == 0) return;
+  HTTPClient http;
+  if (!openTo(http, "/api/alert")) return;
 
   String body = "{\"silent\":";
   body += silent ? "true" : "false";
@@ -86,31 +109,69 @@ void alert(bool silent, const char *kind, const char *event, uint16_t value) {
   body += String(Store::epoch());
   body += "}";
 
-  HTTPClient http;
-  http.setConnectTimeout(1200);
-  http.setTimeout(1500);
-  if (!http.begin(c.serverUrl + "/api/alert")) return;
   http.addHeader("Content-Type", "application/json");
-  http.addHeader("X-Api-Key", c.apiKey);
   http.POST(body);
   http.end();
 }
 
-static void pollCommands() {
-  const HubConfig &c = Store::config();
-  if (c.serverUrl.length() == 0) return;
-
+void decide(uint32_t id, bool allowed) {
   HTTPClient http;
-  http.setConnectTimeout(1200);
-  http.setTimeout(1500);
-  if (!http.begin(c.serverUrl + "/api/command")) return;
-  http.addHeader("X-Api-Key", c.apiKey);
+  if (!openTo(http, "/api/command")) return;
+  String body = "{\"decision\":{\"id\":";
+  body += String(id);
+  body += ",\"allowed\":";
+  body += allowed ? "true" : "false";
+  body += "}}";
+  http.addHeader("Content-Type", "application/json");
+  http.POST(body);
+  http.end();
+}
+
+void publishRoster() { g_rosterDue = true; }
+
+static void sendRoster() {
+  HTTPClient http;
+  if (!openTo(http, "/api/fingers")) return;
+
+  String body = "{\"fingers\":[";
+  for (int i = 0; i < Fingers::count(); i++) {
+    if (i) body += ",";
+    body += "{\"id\":";
+    body += String(Fingers::idAt(i));
+    body += ",\"label\":\"";
+    body += Fingers::labelAt(i);
+    body += "\"}";
+  }
+  body += "]}";
+
+  http.addHeader("Content-Type", "application/json");
+  if (http.POST(body) == 200) g_rosterDue = false;
+  http.end();
+}
+
+static void takeApproval(const String &body) {
+  const int k = body.indexOf("\"approve\"");
+  if (k < 0) return;
+  const long id = findNumber(body, "\"id\"", k);
+  if (id <= 0) return;
+  const String action = findString(body, "\"action\"", k);
+  const String text   = findString(body, "\"text\"", k);
+  const long arg      = findNumber(body, "\"arg\"", k);
+  if (!action.length()) return;
+  Access::request((uint32_t)id, action.c_str(),
+                  (uint16_t)(arg < 0 ? 0 : arg), text.c_str());
+}
+
+static void pollCommands() {
+  HTTPClient http;
+  if (!openTo(http, "/api/command")) return;
   if (http.GET() == 200) {
     const String body = http.getString();
-    if (body.indexOf("\"unlock\":true") >= 0) Sec::clearLockdown("unlocked from bot");
-    if (body.indexOf("\"panic\":true") >= 0) Sec::panic();
-    if (body.indexOf("\"disarm\":true") >= 0) Sec::requestArm(MODE_DISARMED);
-    if (body.indexOf("\"arm\":true") >= 0) Sec::requestArm(MODE_AWAY);
+    if (flagTrue(body, "unlock")) Sec::clearLockdown("unlocked from the bot");
+    if (flagTrue(body, "panic"))  Sec::panic();
+    if (flagTrue(body, "disarm")) Sec::requestArm(MODE_DISARMED);
+    if (flagTrue(body, "arm"))    Sec::requestArm(MODE_AWAY);
+    takeApproval(body);
   }
   http.end();
 }
@@ -122,7 +183,10 @@ void tick() {
   const bool up = WiFi.status() == WL_CONNECTED;
   if (up != g_online) {
     g_online = up;
-    if (up) g_nextSync = 0;
+    if (up) {
+      g_nextSync = 0;
+      g_rosterDue = true;
+    }
   }
 
   if (!g_online) {
@@ -141,6 +205,7 @@ void tick() {
   if (now >= g_nextPoll) {
     g_nextPoll = now + COMMAND_POLL_MS;
     pollCommands();
+    if (g_rosterDue) sendRoster();
   }
 }
 

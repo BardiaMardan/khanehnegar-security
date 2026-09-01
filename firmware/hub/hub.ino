@@ -2,6 +2,9 @@
 #include <SecMesh.h>
 #include "config.h"
 #include "store.h"
+#include "journal.h"
+#include "access.h"
+#include "fingers.h"
 #include "nodes.h"
 #include "state.h"
 #include "io.h"
@@ -74,8 +77,13 @@ void setup() {
 
   UI::boot("fingerprint");
   FP::begin();
-  Serial.printf("fingerprint: %s, %d templates\n",
-                FP::present() ? "ok" : "NOT RESPONDING", FP::templateCount());
+  if (Fingers::count() == 0) {
+    const int adopted = FP::adoptExisting();
+    if (adopted) Serial.printf("fingers: adopted %d already in the sensor\n", adopted);
+  }
+  Serial.printf("fingerprint: %s, %d templates, %d enrolled\n",
+                FP::present() ? "ok" : "NOT RESPONDING",
+                FP::templateCount(), Fingers::count());
 
   UI::boot("sensors");
   Climate::begin();
@@ -103,17 +111,14 @@ static void handleFingerprint() {
       Sec::onUnknownFinger();
       UI::invalidate();
       break;
-    case FP::RES_ENROLLED: {
-      const uint16_t id = FP::lastEnrolledId();
-      const bool dur = FP::lastEnrollDuress();
-      Store::addFinger(id, String("finger ") + String(id), dur);
-      Serial.printf("enrolled id %u%s\n", id, dur ? " (duress)" : "");
-      IO::beep(2, 80, 80);
+    case FP::RES_ENROLLED:
+      Sec::onEnrolled(FP::lastEnrolledId());
+      Serial.printf("enrolled id %u\n", FP::lastEnrolledId());
       UI::invalidate();
       break;
-    }
     case FP::RES_ENROLL_FAIL:
       Serial.println("enrol failed");
+      Sec::showToast("ENROL FAILED", 3);
       IO::reject();
       UI::invalidate();
       break;

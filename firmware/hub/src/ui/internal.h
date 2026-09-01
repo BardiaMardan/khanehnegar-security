@@ -19,11 +19,17 @@ void     drawBtn(const Btn &b, uint16_t fill, uint16_t text, uint8_t font = 2);
 void     label(int16_t x, int16_t y, const String &s, uint16_t fg, uint8_t font, uint16_t pad);
 uint16_t modeColour(uint8_t m);
 
+Btn  keyAt(int i);
+int  keyHit(int16_t x, int16_t y);
+void drawKeyGrid();
+void drawEntry(const char *prompt, uint16_t width);
+
 void drawStatus(bool full);
 bool statusTouch(int16_t x, int16_t y);
 void drawKeypad(bool full);
 bool keypadTouch(int16_t x, int16_t y);
 void drawLog(bool full);
-void drawNodes(bool full);
-bool nodesTouch(int16_t x, int16_t y);
+void drawManage(bool full);
+bool manageTouch(int16_t x, int16_t y);
+void resetKeypad();
 }

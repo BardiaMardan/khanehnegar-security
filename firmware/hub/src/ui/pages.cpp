@@ -4,11 +4,46 @@
 #include "../../io.h"
 #include "../../config.h"
 #include "../../store.h"
+#include "../../journal.h"
+#include "../../access.h"
+#include "../../fingers.h"
 #include "../../climate.h"
 #include "../../net.h"
 #include "../../fp.h"
 
 namespace UI {
+
+static const char *kKeys[12] = {"1","2","3","4","5","6","7","8","9","CLR","0","OK"};
+
+Btn keyAt(int i) {
+  const int col = i % 3, row = i / 3;
+  return {(int16_t)(6 + col * 78), (int16_t)(46 + row * 54), 72, 48, kKeys[i]};
+}
+
+int keyHit(int16_t x, int16_t y) {
+  for (int i = 0; i < 12; i++) if (hit(keyAt(i), x, y)) return i;
+  return -1;
+}
+
+void drawKeyGrid() {
+  for (int i = 0; i < 12; i++)
+    drawBtn(keyAt(i), i == 11 ? COL_OK : COL_PANEL, i == 11 ? COL_BG : COL_TEXT, 4);
+}
+
+void drawEntry(const char *prompt, uint16_t width) {
+  String masked;
+  for (uint16_t i = 0; i < g_pin.length(); i++) masked += "*";
+  tft.setTextDatum(ML_DATUM);
+  tft.setTextPadding(width);
+  tft.setTextColor(g_pin.length() ? COL_TEXT : COL_DIM, COL_BG);
+  tft.drawString(masked.length() ? masked : String(prompt), 10, 24, 4);
+  tft.setTextPadding(0);
+}
+
+static String stamp(const LogEntry &e) {
+  if (e.at) return String((millis() - e.at) / 1000) + "s";
+  return Store::hhmm(e.epoch);
+}
 
 static const Btn kAction = {6, 208, 228, 56, "ARM"};
 
@@ -43,7 +78,10 @@ void drawStatus(bool full) {
   tft.drawString(Store::clockHHMM(), 232, 27, 2);
   tft.setTextPadding(0);
 
-  label(8, 58, Sec::message(), COL_TEXT, 2, 168);
+  const bool waiting = Access::pending() && !Access::granted();
+  label(8, 58, waiting ? "web action waits for your code" : Sec::message(),
+        waiting ? COL_WARN : COL_TEXT, 2, 168);
+
   const uint32_t cd = Sec::countdownMs();
   label(182, 58, cd ? String(cd / 1000) + "s" : String(""), COL_WARN, 2, 50);
 
@@ -66,8 +104,8 @@ void drawStatus(bool full) {
 
   for (int row = 0; row < 4; row++) {
     const int y = 128 + row * 20;
-    if (row < Sec::logCount()) {
-      const LogEntry &e = Sec::logAt(row);
+    if (row < Journal::count()) {
+      const LogEntry &e = Journal::at(row);
       label(8, y, String(secKindName(e.kind)) + "   " + secEventName(e.code),
             e.silent ? COL_ACCENT : COL_TEXT, 2, 224);
     } else {
@@ -92,11 +130,27 @@ bool statusTouch(int16_t x, int16_t y) {
   return true;
 }
 
-static const char *kKeys[12] = {"1","2","3","4","5","6","7","8","9","CLR","0","OK"};
+enum KeyMode : uint8_t { KM_UNLOCK = 0, KM_CUR, KM_NEW, KM_CONFIRM };
 
-static Btn keyAt(int i) {
-  const int col = i % 3, row = i / 3;
-  return {(int16_t)(6 + col * 78), (int16_t)(52 + row * 54), 72, 48, kKeys[i]};
+static KeyMode g_km = KM_UNLOCK;
+static String  g_cur;
+static String  g_new;
+
+static const Btn kChange = {172, 6, 62, 34, "CODE"};
+
+void resetKeypad() {
+  g_km = KM_UNLOCK;
+  g_cur = "";
+  g_new = "";
+}
+
+static const char *kmPrompt() {
+  switch (g_km) {
+    case KM_CUR:     return "current";
+    case KM_NEW:     return "new code";
+    case KM_CONFIRM: return "again";
+    default:         return "enter code";
+  }
 }
 
 void drawKeypad(bool full) {
@@ -116,37 +170,69 @@ void drawKeypad(bool full) {
 
   if (full) {
     tft.fillRect(0, 0, SCR_W, NAV_TOP, COL_BG);
-    for (int i = 0; i < 12; i++)
-      drawBtn(keyAt(i), i == 11 ? COL_OK : COL_PANEL,
-              i == 11 ? COL_BG : COL_TEXT, 4);
+    drawKeyGrid();
   }
 
-  String masked;
-  for (uint16_t i = 0; i < g_pin.length(); i++) masked += "*";
-  tft.setTextDatum(MC_DATUM);
-  tft.setTextPadding(210);
-  tft.setTextColor(COL_TEXT, COL_BG);
-  tft.drawString(masked.length() ? masked : String("enter code"), SCR_W / 2, 26, 4);
-  tft.setTextPadding(0);
+  drawBtn(kChange, g_km == KM_UNLOCK ? COL_PANEL : COL_ACCENT,
+          g_km == KM_UNLOCK ? COL_DIM : COL_BG);
+  drawEntry(kmPrompt(), 156);
 }
 
 bool keypadTouch(int16_t x, int16_t y) {
   if (Sec::lockdown()) return false;
-  for (int i = 0; i < 12; i++) {
-    if (!hit(keyAt(i), x, y)) continue;
-    if (i == 9) {
-      g_pin = "";
-    } else if (i == 11) {
-      Sec::submitPin(g_pin);
-      g_pin = "";
-      go(PAGE_STATUS);
-    } else {
-      if (g_pin.length() < 8) g_pin += kKeys[i];
-      IO::beep(1, 15, 0);
-    }
+
+  if (hit(kChange, x, y)) {
+    if (g_km == KM_UNLOCK) g_km = KM_CUR;
+    else                   resetKeypad();
+    g_pin = "";
+    g_full = true;
+    IO::beep(1, 20, 0);
     return true;
   }
-  return false;
+
+  const int k = keyHit(x, y);
+  if (k < 0) return false;
+
+  if (k == 9) {
+    g_pin = "";
+    return true;
+  }
+
+  if (k != 11) {
+    if (g_pin.length() < 8) g_pin += kKeys[k];
+    IO::beep(1, 15, 0);
+    return true;
+  }
+
+  const String entered = g_pin;
+  g_pin = "";
+
+  switch (g_km) {
+    case KM_UNLOCK:
+      Sec::submitPin(entered);
+      go(PAGE_STATUS);
+      break;
+    case KM_CUR:
+      g_cur = entered;
+      g_km = KM_NEW;
+      break;
+    case KM_NEW:
+      if (entered.length() < PIN_LENGTH) {
+        Sec::showToast("CODE TOO SHORT", 3);
+        resetKeypad();
+      } else {
+        g_new = entered;
+        g_km = KM_CONFIRM;
+      }
+      break;
+    case KM_CONFIRM:
+      if (entered == g_new) Sec::changePin(g_cur, g_new);
+      else                  Sec::showToast("CODES DID NOT MATCH", 3);
+      resetKeypad();
+      break;
+  }
+  g_full = true;
+  return true;
 }
 
 void drawLog(bool full) {
@@ -157,34 +243,53 @@ void drawLog(bool full) {
 
   for (int i = 0; i < 12; i++) {
     const int y = 30 + i * 20;
-    if (i >= Sec::logCount()) {
+    if (i >= Journal::count()) {
       label(8, y, "", COL_TEXT, 2, 224);
       continue;
     }
-    const LogEntry &e = Sec::logAt(i);
+    const LogEntry &e = Journal::at(i);
     label(8, y, String(secKindName(e.kind)) + "  " + secEventName(e.code),
           e.silent ? COL_ACCENT : COL_TEXT, 2, 178);
     tft.setTextDatum(TR_DATUM);
     tft.setTextPadding(44);
     tft.setTextColor(COL_DIM, COL_BG);
-    tft.drawString(String((millis() - e.at) / 1000) + "s", 232, y, 2);
+    tft.drawString(stamp(e), 232, y, 2);
     tft.setTextPadding(0);
   }
 }
 
-static const Btn kPair    = {6, 196, 110, 34, "PAIR MODE"};
-static const Btn kForget  = {124, 196, 110, 34, "FORGET ALL"};
-static const Btn kEnroll  = {6, 234, 110, 34, "ADD FINGER"};
-static const Btn kEnrollD = {124, 234, 110, 34, "ADD DURESS"};
+static const Btn kPair   = {6, 196, 110, 34, "PAIR MODE"};
+static const Btn kForget = {124, 196, 110, 34, "FORGET NODES"};
+static const Btn kEnroll = {6, 234, 110, 34, "ADD FINGER"};
+static const Btn kWipe   = {124, 234, 110, 34, "WIPE FINGERS"};
 
-void drawNodes(bool full) {
+static void drawGate(bool full) {
   if (full) {
     tft.fillRect(0, 0, SCR_W, NAV_TOP, COL_BG);
-    label(8, 6, "modules", COL_DIM, 2, 0);
+    drawKeyGrid();
+  }
+  drawEntry("code to manage", 220);
+}
+
+void drawManage(bool full) {
+  if (!Access::granted()) {
+    drawGate(full);
+    return;
   }
 
+  if (full) {
+    tft.fillRect(0, 0, SCR_W, NAV_TOP, COL_BG);
+    label(8, 6, "manage", COL_DIM, 2, 80);
+  }
+
+  tft.setTextDatum(TR_DATUM);
+  tft.setTextPadding(64);
+  tft.setTextColor(COL_ACCENT, COL_BG);
+  tft.drawString(String(Access::sessionMsLeft() / 1000) + "s left", 232, 6, 2);
+  tft.setTextPadding(0);
+
   int row = 0;
-  for (int i = 0; i < Nodes::capacity() && row < 6; i++) {
+  for (int i = 0; i < Nodes::capacity() && row < 5; i++) {
     NodeRec *n = Nodes::at(i);
     if (!n || !n->used) continue;
     const int y = 28 + row * 22;
@@ -198,26 +303,70 @@ void drawNodes(bool full) {
     row++;
   }
   if (row == 0) label(8, 28, "none paired yet", COL_DIM, 2, 224);
-  for (int i = row; i < 6; i++) label(8, 28 + i * 22, "", COL_TEXT, 2, 224);
+  for (int i = row; i < 5; i++) label(8, 28 + i * 22, "", COL_TEXT, 2, 224);
 
   String line;
   if (!FP::present())       line = "fingerprint offline";
   else if (FP::enrolling()) line = FP::enrollStep() == 1 ? "lift finger" : "place finger";
-  else line = String(Store::fingerCount()) + " fingers   sd " +
+  else line = String(Fingers::count()) + " fingers   sd " +
               (Store::ready() ? "ok" : "MISSING");
-  label(8, 168, line, FP::enrolling() ? COL_WARN : COL_DIM, 2, 224);
+  label(8, 146, line, FP::enrolling() ? COL_WARN : COL_DIM, 2, 224);
+  label(8, 168, "delete fingers from the web", COL_DIM, 2, 224);
 
-  drawBtn(kPair,    Nodes::pairingMode() ? COL_WARN : COL_PANEL, COL_TEXT);
-  drawBtn(kForget,  COL_PANEL, COL_TEXT);
-  drawBtn(kEnroll,  FP::enrolling() ? COL_WARN : COL_PANEL, COL_TEXT);
-  drawBtn(kEnrollD, COL_PANEL, COL_TEXT);
+  drawBtn(kPair,   Nodes::pairingMode() ? COL_WARN : COL_PANEL, COL_TEXT);
+  drawBtn(kForget, COL_PANEL, COL_TEXT);
+  drawBtn(kEnroll, FP::enrolling() ? COL_WARN : COL_PANEL, COL_TEXT);
+  drawBtn(kWipe,   COL_PANEL, COL_TEXT);
 }
 
-bool nodesTouch(int16_t x, int16_t y) {
-  if (hit(kPair, x, y))    { Nodes::setPairingMode(!Nodes::pairingMode()); g_full = true; return true; }
-  if (hit(kForget, x, y))  { Nodes::forgetAll(); g_full = true; return true; }
-  if (hit(kEnroll, x, y))  { FP::startEnroll(false); g_full = true; return true; }
-  if (hit(kEnrollD, x, y)) { FP::startEnroll(true);  g_full = true; return true; }
+static bool gateTouch(int16_t x, int16_t y) {
+  const int k = keyHit(x, y);
+  if (k < 0) return false;
+
+  if (k == 9) {
+    g_pin = "";
+    return true;
+  }
+
+  if (k != 11) {
+    if (g_pin.length() < 8) g_pin += kKeys[k];
+    IO::beep(1, 15, 0);
+    return true;
+  }
+
+  const String entered = g_pin;
+  g_pin = "";
+  Sec::openManage(entered);
+  g_full = true;
+  return true;
+}
+
+bool manageTouch(int16_t x, int16_t y) {
+  if (!Access::granted()) return gateTouch(x, y);
+
+  Access::keepAlive();
+
+  if (hit(kPair, x, y)) {
+    Nodes::setPairingMode(!Nodes::pairingMode());
+    g_full = true;
+    return true;
+  }
+  if (hit(kForget, x, y)) {
+    Nodes::forgetAll();
+    Sec::showToast("MODULES FORGOTTEN", 2);
+    g_full = true;
+    return true;
+  }
+  if (hit(kEnroll, x, y)) {
+    Sec::enrolFinger();
+    g_full = true;
+    return true;
+  }
+  if (hit(kWipe, x, y)) {
+    Sec::clearFingers();
+    g_full = true;
+    return true;
+  }
   return false;
 }
 

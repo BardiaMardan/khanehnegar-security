@@ -2,12 +2,12 @@
 #include <math.h>
 #include <SecMesh.h>
 
-#define PIN_SDA          4
-#define PIN_SCL          5
-#define PIN_DOOR        14
-#define PIN_CASE        12
-#define PIN_LED          2
-#define PIN_UNCLAIM      0
+#define PIN_SDA          21
+#define PIN_SCL          22
+#define PIN_DOOR         5
+#define PIN_CASE         18
+#define PIN_UNCLAIM      19
+#define PIN_LED          23
 
 #define ENABLE_CASE_TAMPER 1
 

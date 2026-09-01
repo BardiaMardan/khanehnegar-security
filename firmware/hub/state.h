@@ -2,14 +2,6 @@
 #include <Arduino.h>
 #include "nodes.h"
 
-struct LogEntry {
-  uint32_t at;
-  uint8_t  kind;
-  uint8_t  code;
-  uint16_t value;
-  bool     silent;
-};
-
 namespace Sec {
 void begin();
 void tick();
@@ -27,6 +19,8 @@ void onFinger(uint16_t id, uint16_t score);
 void onUnknownFinger();
 
 bool submitPin(const String &pin);
+bool openManage(const String &pin);
+bool changePin(const String &current, const String &next);
 void requestArm(uint8_t m);
 void panic();
 
@@ -34,9 +28,14 @@ bool lockdown();
 void enterLockdown();
 void clearLockdown(const char *how);
 
-int             logCount();
-const LogEntry &logAt(int i);
-const char     *message();
+bool enrolFinger();
+void onEnrolled(uint16_t id);
+bool removeFinger(uint16_t id);
+void clearFingers();
+
+void decideApproval(bool allow);
+
+const char *message();
 
 const char *toastText();
 uint8_t     toastKind();

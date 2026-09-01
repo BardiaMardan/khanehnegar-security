@@ -2,8 +2,11 @@
 #include "io.h"
 #include "config.h"
 #include "store.h"
+#include "journal.h"
+#include "access.h"
+#include "fingers.h"
+#include "fp.h"
 #include "net.h"
-#include <Preferences.h>
 #include <SecMesh.h>
 
 namespace Sec {
@@ -39,20 +42,15 @@ static uint32_t g_decayAt     = 0;
 static uint32_t g_deadline    = 0;
 static uint8_t  g_pendingMode = MODE_DISARMED;
 static uint32_t g_lastTock    = 0;
-static uint8_t  g_pinFails    = 0;
 static char     g_msg[48]     = "system ready";
-
-static LogEntry g_log[LOG_CAPACITY];
-static int      g_logN = 0;
 
 static uint8_t     g_unknownHits  = 0;
 static uint32_t    g_unknownFirst = 0;
 static char        g_toast[28]    = "";
 static uint8_t     g_toastKind    = 0;
 static uint32_t    g_toastAt      = 0;
-static bool        g_lockdown     = false;
 
-bool lockdown() { return g_lockdown; }
+bool lockdown() { return Access::lockdown(); }
 
 void showToast(const char *text, uint8_t kind) {
   strncpy(g_toast, text, sizeof(g_toast) - 1);
@@ -68,10 +66,7 @@ uint32_t    toastAge()  { return g_toastAt ? millis() - g_toastAt : 0xFFFFFFFF; 
 static void say(const char *m) { strncpy(g_msg, m, sizeof(g_msg) - 1); }
 
 static void logEvent(uint8_t kind, uint8_t code, uint16_t value, bool silent) {
-  for (int i = LOG_CAPACITY - 1; i > 0; i--) g_log[i] = g_log[i - 1];
-  g_log[0] = {millis(), kind, code, value, silent};
-  if (g_logN < LOG_CAPACITY) g_logN++;
-  Store::appendEvent(Store::epoch(), secKindName(kind), secEventName(code), value, silent);
+  Journal::append(kind, code, value, silent);
 }
 
 static void broadcastMode() {
@@ -173,19 +168,13 @@ static void doDisarm() {
   g_pendingMode = MODE_DISARMED;
   g_deadline = 0;
   g_risk = g_loudRisk = 0;
-  g_pinFails = 0;
+  g_silent = false;
   say("disarmed");
   IO::ack();
   broadcastMode();
 }
 
 void enterLockdown() {
-  if (g_lockdown) return;
-  g_lockdown = true;
-  Preferences p;
-  p.begin("khaneh", false);
-  p.putBool("lockdown", true);
-  p.end();
   say("LOCKED, unlock remotely");
   showToast("LOCKDOWN", 3);
   logEvent(KIND_HUB, EV_LOCKDOWN, 0, true);
@@ -193,13 +182,7 @@ void enterLockdown() {
 }
 
 void clearLockdown(const char *how) {
-  if (!g_lockdown) return;
-  g_lockdown = false;
-  g_pinFails = 0;
-  Preferences p;
-  p.begin("khaneh", false);
-  p.putBool("lockdown", false);
-  p.end();
+  if (!Access::clearLockdown()) return;
   say("lockdown cleared");
   showToast("UNLOCKED", 1);
   logEvent(KIND_HUB, EV_UNLOCKED, 0, false);
@@ -207,59 +190,89 @@ void clearLockdown(const char *how) {
 }
 
 bool submitPin(const String &pin) {
-  if (g_lockdown) {
+  const Access::Verdict v = Access::verify(pin);
+
+  if (v == Access::V_LOCKED) {
     IO::reject();
     showToast("LOCKED, USE FINGER", 3);
     return false;
   }
-  if (pin == DEFAULT_DURESS) {
+
+  if (v == Access::V_OK) {
     doDisarm();
-    g_silent = true;
-    logEvent(KIND_HUB, EV_DURESS, 0, true);
-    showToast("DISARMED", 1);
-    return true;
-  }
-  if (pin == DEFAULT_PIN) {
-    doDisarm();
-    g_silent = false;
     logEvent(KIND_HUB, EV_DISARMED, 0, false);
     showToast("DISARMED", 1);
     return true;
   }
-  g_pinFails++;
+
   IO::reject();
   say("wrong code");
   showToast("WRONG CODE", 3);
-  logEvent(KIND_HUB, EV_ACCESS_DENIED, g_pinFails, false);
-  if (g_pinFails >= MAX_PIN_ATTEMPTS) {
-    g_pinFails = 0;
+  logEvent(KIND_HUB, EV_ACCESS_DENIED, Access::failures(), false);
+
+  if (Access::takeLatched()) {
     raise(false, KIND_HUB, EV_CODE_ATTACK, 0);
     enterLockdown();
   }
   return false;
 }
 
+bool openManage(const String &pin) {
+  const Access::Verdict v = Access::verify(pin);
+
+  if (v == Access::V_LOCKED) {
+    IO::reject();
+    showToast("LOCKED, USE FINGER", 3);
+    return false;
+  }
+
+  if (v == Access::V_OK) {
+    Access::grant();
+    IO::ack();
+    showToast("MANAGE UNLOCKED", 1);
+    return true;
+  }
+
+  IO::reject();
+  showToast("WRONG CODE", 3);
+  logEvent(KIND_HUB, EV_ACCESS_DENIED, Access::failures(), false);
+
+  if (Access::takeLatched()) {
+    raise(false, KIND_HUB, EV_CODE_ATTACK, 0);
+    enterLockdown();
+  }
+  return false;
+}
+
+bool changePin(const String &current, const String &next) {
+  if (!Access::changePin(current, next)) {
+    IO::reject();
+    showToast("CODE NOT CHANGED", 3);
+    if (Access::takeLatched()) {
+      raise(false, KIND_HUB, EV_CODE_ATTACK, 0);
+      enterLockdown();
+    }
+    return false;
+  }
+  IO::ack();
+  say("code changed");
+  showToast("CODE CHANGED", 1);
+  logEvent(KIND_HUB, EV_PIN_CHANGED, 0, false);
+  Net::alert(false, "PANEL", "keypad code changed", 0);
+  return true;
+}
+
 void onFinger(uint16_t id, uint16_t score) {
-  if (!Store::fingerKnown(id)) {
+  if (!Fingers::known(id)) {
     onUnknownFinger();
     return;
   }
   g_unknownHits = 0;
-  if (g_lockdown) clearLockdown("unlocked by fingerprint");
-  if (Store::fingerIsDuress(id)) {
-    doDisarm();
-    g_silent = true;
-    logEvent(KIND_HUB, EV_DURESS, score, true);
-    Net::alert(true, "PANEL", "duress finger", id);
-    String d = Store::fingerLabel(id);
-    if (!d.length()) d = String("finger ") + String(id);
-    showToast(("welcome " + d).c_str(), 1);
-    return;
-  }
+  Access::keepAlive();
+  if (Access::lockdown()) clearLockdown("unlocked by fingerprint");
   doDisarm();
-  g_silent = false;
   logEvent(KIND_HUB, EV_ACCESS_OK, id, false);
-  String who = Store::fingerLabel(id);
+  String who = Fingers::label(id);
   if (!who.length()) who = String("finger ") + String(id);
   showToast(("welcome " + who).c_str(), 1);
 }
@@ -283,16 +296,25 @@ void onUnknownFinger() {
 }
 
 void begin() {
-  Preferences p;
-  p.begin("khaneh", true);
-  g_lockdown = p.getBool("lockdown", false);
-  p.end();
-  if (g_lockdown) say("LOCKED, unlock remotely");
+  Access::begin();
+  Journal::begin();
+  Fingers::begin();
+  if (Access::lockdown()) say("LOCKED, unlock remotely");
   g_decayAt = millis();
 }
 
 void tick() {
   const uint32_t now = millis();
+
+  Access::tick();
+  Journal::tick();
+
+  if (Access::pending() && Access::approvalMsLeft() == 0) {
+    const Access::Approval a = Access::approval();
+    Access::drop();
+    logEvent(KIND_HUB, EV_DENIED, (uint16_t)a.id, false);
+    Net::decide(a.id, false);
+  }
 
   if (now - g_decayAt >= 1000) {
     g_decayAt = now;
@@ -336,13 +358,81 @@ void tick() {
   }
 }
 
-int  logCount() { return g_logN; }
-const LogEntry &logAt(int i) { return g_log[i]; }
+bool enrolFinger() {
+  if (!FP::present()) {
+    showToast("SENSOR OFFLINE", 3);
+    return false;
+  }
+  if (Fingers::count() >= FP_SLOTS) {
+    showToast("NO FREE SLOTS", 3);
+    return false;
+  }
+  Access::keepAlive();
+  FP::startEnroll();
+  say("place your finger");
+  return true;
+}
+
+void onEnrolled(uint16_t id) {
+  Fingers::add(id, String("finger ") + String(id));
+  Access::keepAlive();
+  logEvent(KIND_HUB, EV_FINGER_ADDED, id, false);
+  showToast("FINGER ADDED", 1);
+  IO::beep(2, 80, 80);
+  Net::publishRoster();
+  Net::alert(false, "PANEL", "fingerprint added", id);
+}
+
+bool removeFinger(uint16_t id) {
+  if (!Fingers::known(id)) return false;
+  const String who = Fingers::label(id);
+  FP::erase(id);
+  Fingers::remove(id);
+  Access::keepAlive();
+  logEvent(KIND_HUB, EV_FINGER_REMOVED, id, false);
+  showToast(("removed " + who).c_str(), 2);
+  Net::publishRoster();
+  Net::alert(false, "PANEL", "fingerprint removed", id);
+  return true;
+}
+
+void clearFingers() {
+  FP::emptyAll();
+  Fingers::clear();
+  Access::keepAlive();
+  logEvent(KIND_HUB, EV_FINGER_REMOVED, 0, false);
+  showToast("ALL FINGERS CLEARED", 2);
+  Net::publishRoster();
+  Net::alert(false, "PANEL", "all fingerprints cleared", 0);
+}
+
+void decideApproval(bool allow) {
+  if (!Access::pending()) return;
+  const Access::Approval a = Access::approval();
+  Access::drop();
+  Access::keepAlive();
+
+  if (!allow) {
+    logEvent(KIND_HUB, EV_DENIED, (uint16_t)a.id, false);
+    showToast("REFUSED", 2);
+    Net::decide(a.id, false);
+    return;
+  }
+
+  const String action = String(a.action);
+  if      (action == "finger_del")   removeFinger(a.arg);
+  else if (action == "finger_clear") clearFingers();
+  else if (action == "forget_nodes") { Nodes::forgetAll(); showToast("MODULES FORGOTTEN", 2); }
+
+  logEvent(KIND_HUB, EV_APPROVED, (uint16_t)a.id, false);
+  Net::decide(a.id, true);
+}
+
 const char *message() { return g_msg; }
 uint8_t mode() { return g_mode; }
 bool silentLatched() { return g_silent; }
 int  risk() { return g_risk; }
-uint8_t displayMode() { return g_lockdown ? MODE_LOCKDOWN : g_mode; }
+uint8_t displayMode() { return Access::lockdown() ? MODE_LOCKDOWN : g_mode; }
 bool arming() { return g_pendingMode != MODE_DISARMED; }
 
 uint32_t countdownMs() {
