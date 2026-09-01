@@ -1,5 +1,6 @@
 #include "internal.h"
 #include "../../state.h"
+#include "../../config.h"
 #include <Preferences.h>
 
 namespace UI {
@@ -46,6 +47,7 @@ uint16_t modeColour(uint8_t m) {
     case MODE_AWAY:     return COL_WARN;
     case MODE_ENTRY:    return COL_WARN;
     case MODE_ALARM:    return COL_BAD;
+    case MODE_LOCKDOWN: return COL_BAD;
     default:            return COL_DIM;
   }
 }
@@ -76,8 +78,11 @@ void boot(const char *step) {
 static void calibrate() {
   Preferences p;
   uint16_t cal[5] = {0};
+  char key[8];
+  snprintf(key, sizeof(key), "tcal%d", UI_ROTATION);
+
   p.begin("khaneh", true);
-  const size_t got = p.getBytes("tcal", cal, sizeof(cal));
+  const size_t got = p.getBytes(key, cal, sizeof(cal));
   p.end();
 
   if (got == sizeof(cal) && cal[4] != 0) {
@@ -94,14 +99,14 @@ static void calibrate() {
   tft.calibrateTouch(cal, COL_TEXT, COL_BG, 15);
 
   p.begin("khaneh", false);
-  p.putBytes("tcal", cal, sizeof(cal));
+  p.putBytes(key, cal, sizeof(cal));
   p.end();
   tft.setTouch(cal);
 }
 
 void begin() {
   tft.init();
-  tft.setRotation(0);
+  tft.setRotation(UI_ROTATION);
   tft.fillScreen(COL_BG);
   calibrate();
   splashFrame();

@@ -1,4 +1,4 @@
-import { checkApiKey } from '../../../lib/auth'
+import { checkApiKey } from '../../../lib/apikey'
 
 export async function GET(request) {
   if (!checkApiKey(request)) {

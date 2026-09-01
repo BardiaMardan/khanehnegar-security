@@ -1,6 +1,6 @@
-import { checkApiKey } from '../../../lib/auth'
+import { checkApiKey } from '../../../lib/apikey'
 import { addEvent } from '../../../lib/store'
-import { sendRubika, formatAlert } from '../../../lib/rubika'
+import { broadcast, formatAlert } from '../../../lib/notify'
 
 export async function POST(request) {
   if (!checkApiKey(request)) {
@@ -26,7 +26,7 @@ export async function POST(request) {
   }
 
   await addEvent(event)
-  const delivery = await sendRubika(formatAlert(event))
+  const delivery = await broadcast(formatAlert(event))
 
   return Response.json({ ok: true, notified: delivery.sent })
 }

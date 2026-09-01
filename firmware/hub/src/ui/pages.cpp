@@ -13,6 +13,7 @@ namespace UI {
 static const Btn kAction = {6, 208, 228, 56, "ARM"};
 
 static const char *actionLabel() {
+  if (Sec::lockdown()) return "LOCKED";
   if (Sec::arming()) return "CANCEL";
   if (Sec::mode() == MODE_DISARMED) return "ARM";
   return "DISARM";
@@ -76,13 +77,15 @@ void drawStatus(bool full) {
 
   Btn b = kAction;
   b.label = actionLabel();
-  const uint16_t fill = Sec::arming() ? COL_WARN
+  const uint16_t fill = Sec::lockdown() ? COL_BAD
+                      : Sec::arming() ? COL_WARN
                       : Sec::mode() == MODE_DISARMED ? COL_OK : COL_BAD;
   drawBtn(b, fill, COL_BG, 4);
 }
 
 bool statusTouch(int16_t x, int16_t y) {
   if (!hit(kAction, x, y)) return false;
+  if (Sec::lockdown())              { go(PAGE_KEYPAD);                return true; }
   if (Sec::arming())                { Sec::requestArm(MODE_DISARMED); return true; }
   if (Sec::mode() == MODE_DISARMED) { Sec::requestArm(MODE_AWAY);     return true; }
   go(PAGE_KEYPAD);
@@ -97,10 +100,24 @@ static Btn keyAt(int i) {
 }
 
 void drawKeypad(bool full) {
+  if (Sec::lockdown()) {
+    if (full) tft.fillRect(0, 0, SCR_W, NAV_TOP, COL_BG);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextPadding(220);
+    tft.setTextColor(COL_BAD, COL_BG);
+    tft.drawString("LOCKED", SCR_W / 2, 96, 4);
+    tft.setTextColor(COL_TEXT, COL_BG);
+    tft.drawString("too many wrong codes", SCR_W / 2, 136, 2);
+    tft.drawString("use a fingerprint", SCR_W / 2, 160, 2);
+    tft.drawString("or unlock from the bot", SCR_W / 2, 184, 2);
+    tft.setTextPadding(0);
+    return;
+  }
+
   if (full) {
     tft.fillRect(0, 0, SCR_W, NAV_TOP, COL_BG);
     for (int i = 0; i < 12; i++)
-      drawBtn(keyAt(i), i == 11 ? COL_OK : i == 9 ? COL_PANEL : COL_PANEL,
+      drawBtn(keyAt(i), i == 11 ? COL_OK : COL_PANEL,
               i == 11 ? COL_BG : COL_TEXT, 4);
   }
 
@@ -114,6 +131,7 @@ void drawKeypad(bool full) {
 }
 
 bool keypadTouch(int16_t x, int16_t y) {
+  if (Sec::lockdown()) return false;
   for (int i = 0; i < 12; i++) {
     if (!hit(keyAt(i), x, y)) continue;
     if (i == 9) {

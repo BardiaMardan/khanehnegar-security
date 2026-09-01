@@ -1,10 +1,10 @@
-import { cookies } from 'next/headers'
-import { COOKIE, validToken } from '../../../lib/auth'
+import { headers } from 'next/headers'
+import { auth } from '../../../lib/auth'
 import { readEvents } from '../../../lib/store'
 
 export async function GET() {
-  const jar = await cookies()
-  if (!validToken(jar.get(COOKIE)?.value)) {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (!session) {
     return Response.json({ ok: false }, { status: 401 })
   }
   const events = await readEvents()

@@ -3,6 +3,7 @@
 #include "config.h"
 #include "store.h"
 #include "net.h"
+#include <Preferences.h>
 #include <SecMesh.h>
 
 namespace Sec {
@@ -49,6 +50,9 @@ static uint32_t    g_unknownFirst = 0;
 static char        g_toast[28]    = "";
 static uint8_t     g_toastKind    = 0;
 static uint32_t    g_toastAt      = 0;
+static bool        g_lockdown     = false;
+
+bool lockdown() { return g_lockdown; }
 
 void showToast(const char *text, uint8_t kind) {
   strncpy(g_toast, text, sizeof(g_toast) - 1);
@@ -175,7 +179,39 @@ static void doDisarm() {
   broadcastMode();
 }
 
+void enterLockdown() {
+  if (g_lockdown) return;
+  g_lockdown = true;
+  Preferences p;
+  p.begin("khaneh", false);
+  p.putBool("lockdown", true);
+  p.end();
+  say("LOCKED, unlock remotely");
+  showToast("LOCKDOWN", 3);
+  logEvent(KIND_HUB, EV_LOCKDOWN, 0, true);
+  Net::alert(true, "PANEL", "lockdown after failed codes", 0);
+}
+
+void clearLockdown(const char *how) {
+  if (!g_lockdown) return;
+  g_lockdown = false;
+  g_pinFails = 0;
+  Preferences p;
+  p.begin("khaneh", false);
+  p.putBool("lockdown", false);
+  p.end();
+  say("lockdown cleared");
+  showToast("UNLOCKED", 1);
+  logEvent(KIND_HUB, EV_UNLOCKED, 0, false);
+  Net::alert(false, "PANEL", how, 0);
+}
+
 bool submitPin(const String &pin) {
+  if (g_lockdown) {
+    IO::reject();
+    showToast("LOCKED, USE FINGER", 3);
+    return false;
+  }
   if (pin == DEFAULT_DURESS) {
     doDisarm();
     g_silent = true;
@@ -198,6 +234,7 @@ bool submitPin(const String &pin) {
   if (g_pinFails >= MAX_PIN_ATTEMPTS) {
     g_pinFails = 0;
     raise(false, KIND_HUB, EV_CODE_ATTACK, 0);
+    enterLockdown();
   }
   return false;
 }
@@ -208,6 +245,7 @@ void onFinger(uint16_t id, uint16_t score) {
     return;
   }
   g_unknownHits = 0;
+  if (g_lockdown) clearLockdown("unlocked by fingerprint");
   if (Store::fingerIsDuress(id)) {
     doDisarm();
     g_silent = true;
@@ -245,6 +283,11 @@ void onUnknownFinger() {
 }
 
 void begin() {
+  Preferences p;
+  p.begin("khaneh", true);
+  g_lockdown = p.getBool("lockdown", false);
+  p.end();
+  if (g_lockdown) say("LOCKED, unlock remotely");
   g_decayAt = millis();
 }
 
@@ -299,7 +342,7 @@ const char *message() { return g_msg; }
 uint8_t mode() { return g_mode; }
 bool silentLatched() { return g_silent; }
 int  risk() { return g_risk; }
-uint8_t displayMode() { return g_mode; }
+uint8_t displayMode() { return g_lockdown ? MODE_LOCKDOWN : g_mode; }
 bool arming() { return g_pendingMode != MODE_DISARMED; }
 
 uint32_t countdownMs() {

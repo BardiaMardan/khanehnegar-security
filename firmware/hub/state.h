@@ -30,6 +30,10 @@ bool submitPin(const String &pin);
 void requestArm(uint8_t m);
 void panic();
 
+bool lockdown();
+void enterLockdown();
+void clearLockdown(const char *how);
+
 int             logCount();
 const LogEntry &logAt(int i);
 const char     *message();

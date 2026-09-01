@@ -1,5 +1,6 @@
 #include "net.h"
 #include "store.h"
+#include "state.h"
 #include "config.h"
 #include <WiFi.h>
 #include <HTTPClient.h>
@@ -9,6 +10,7 @@ namespace Net {
 static bool     g_online   = false;
 static uint32_t g_nextTry  = 0;
 static uint32_t g_nextSync = 0;
+static uint32_t g_nextPoll = 0;
 static bool     g_started  = false;
 
 bool online()  { return g_online; }
@@ -94,6 +96,25 @@ void alert(bool silent, const char *kind, const char *event, uint16_t value) {
   http.end();
 }
 
+static void pollCommands() {
+  const HubConfig &c = Store::config();
+  if (c.serverUrl.length() == 0) return;
+
+  HTTPClient http;
+  http.setConnectTimeout(1200);
+  http.setTimeout(1500);
+  if (!http.begin(c.serverUrl + "/api/command")) return;
+  http.addHeader("X-Api-Key", c.apiKey);
+  if (http.GET() == 200) {
+    const String body = http.getString();
+    if (body.indexOf("\"unlock\":true") >= 0) Sec::clearLockdown("unlocked from bot");
+    if (body.indexOf("\"panic\":true") >= 0) Sec::panic();
+    if (body.indexOf("\"disarm\":true") >= 0) Sec::requestArm(MODE_DISARMED);
+    if (body.indexOf("\"arm\":true") >= 0) Sec::requestArm(MODE_AWAY);
+  }
+  http.end();
+}
+
 void tick() {
   if (!g_started) return;
   const uint32_t now = millis();
@@ -115,6 +136,11 @@ void tick() {
   if (now >= g_nextSync) {
     g_nextSync = now + TIME_SYNC_MS;
     syncTime();
+  }
+
+  if (now >= g_nextPoll) {
+    g_nextPoll = now + COMMAND_POLL_MS;
+    pollCommands();
   }
 }
 

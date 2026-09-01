@@ -33,6 +33,8 @@ enum SecEvent : uint8_t {
   EV_ACCESS_DENIED = 34,
   EV_ARMED         = 35,
   EV_DISARMED      = 36,
+  EV_LOCKDOWN      = 37,
+  EV_UNLOCKED      = 38,
 };
 
 enum SecCommand : uint8_t {
@@ -50,6 +52,7 @@ enum SecMode : uint8_t {
   MODE_ENTRY    = 3,
   MODE_ALARM    = 4,
   MODE_SILENT   = 5,
+  MODE_LOCKDOWN = 6,
 };
 
 enum NodeKind : uint8_t {
@@ -90,6 +93,8 @@ inline const char *secEventName(uint8_t e) {
     case EV_ACCESS_DENIED: return "denied";
     case EV_ARMED:         return "armed";
     case EV_DISARMED:      return "disarmed";
+    case EV_LOCKDOWN:      return "LOCKDOWN";
+    case EV_UNLOCKED:      return "lockdown cleared";
     default:               return "event";
   }
 }
@@ -114,6 +119,7 @@ inline const char *secModeName(uint8_t m) {
     case MODE_ENTRY:    return "ENTRY";
     case MODE_ALARM:    return "ALARM";
     case MODE_SILENT:   return "DISARMED";
+    case MODE_LOCKDOWN: return "LOCKED";
     default:            return "?";
   }
 }
