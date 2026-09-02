@@ -19,6 +19,7 @@ static uint32_t g_lastTouch   = 0;
 static uint32_t g_touchGuard  = 0;
 static bool     g_toastShown  = false;
 static bool     g_popupShown  = false;
+static bool     g_grantShown  = false;
 static uint8_t  g_bootStep    = 0;
 static bool     g_booting     = true;
 
@@ -40,6 +41,25 @@ void label(int16_t x, int16_t y, const String &s, uint16_t fg, uint8_t font, uin
   tft.setTextColor(fg, COL_BG);
   tft.drawString(s, x, y, font);
   tft.setTextPadding(0);
+}
+
+void rightLabel(int16_t x, int16_t y, const String &s, uint16_t fg, uint8_t font, uint16_t pad) {
+  tft.setTextDatum(TR_DATUM);
+  tft.setTextPadding(pad);
+  tft.setTextColor(fg, COL_BG);
+  tft.drawString(s, x, y, font);
+  tft.setTextPadding(0);
+}
+
+void panel(int16_t x, int16_t y, int16_t w, int16_t h) {
+  tft.drawRoundRect(x, y, w, h, 6, COL_PANEL);
+}
+
+void caption(int16_t x, int16_t y, const char *s) {
+  tft.setTextDatum(TL_DATUM);
+  tft.setTextPadding(0);
+  tft.setTextColor(COL_DIM, COL_BG);
+  tft.drawString(s, x, y, 1);
 }
 
 uint16_t modeColour(uint8_t m) {
@@ -277,6 +297,15 @@ void tick() {
   if (g_drawn != g_page) {
     g_drawn = g_page;
     g_full = true;
+  }
+
+  const bool grant = Access::granted();
+  if (grant != g_grantShown) {
+    g_grantShown = grant;
+    if (g_page == PAGE_MANAGE) {
+      g_pin = "";
+      g_full = true;
+    }
   }
 
   const bool periodic = (g_page != PAGE_KEYPAD) && (now - g_lastPaint > 400);

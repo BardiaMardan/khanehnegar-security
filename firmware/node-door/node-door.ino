@@ -105,8 +105,10 @@ static bool adxlRead(float &x, float &y, float &z) {
 static void onRx(const uint8_t mac[6], const SecFrame &f) {
   switch (f.code) {
     case CMD_PAIR_ACCEPT:
-      SecMesh.setHub(mac);
-      hubMode = f.arg;
+      if (SecMesh.onPairAccept(mac, f)) {
+        hubMode = f.arg;
+        SecMesh.send(EV_BOOT);
+      }
       break;
     case CMD_STATE:
       hubMode = f.arg;

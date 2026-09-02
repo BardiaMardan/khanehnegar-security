@@ -141,8 +141,14 @@ void onNodeEvent(NodeRec *n, const SecFrame &f) {
 }
 
 void onHubTamper(bool open) {
-  if (open) addRisk(KIND_HUB, EV_TAMPER_OPEN, 0);
-  else      logEvent(KIND_HUB, EV_TAMPER_CLOSED, 0, false);
+  if (!open) {
+    logEvent(KIND_HUB, EV_TAMPER_CLOSED, 0, false);
+    return;
+  }
+  g_risk = RISK_MAX;
+  g_loudRisk = RISK_MAX;
+  raise(true, KIND_HUB, EV_TAMPER_OPEN, 0);
+  say("PANEL OPENED");
 }
 
 void panic() {

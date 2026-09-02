@@ -19,6 +19,9 @@ static RxItem  rxq[RXQ_LEN];
 static volatile uint8_t rxHead = 0, rxTail = 0;
 
 static bool tamperLast = false;
+static bool tamperRaw = false;
+static uint32_t tamperEdge = 0;
+static uint32_t lastAccept = 0;
 
 static void onMeshRx(const uint8_t mac[6], const SecFrame &f) {
   const uint8_t next = (rxHead + 1) % RXQ_LEN;
@@ -35,10 +38,18 @@ static bool knownKind(uint8_t k) {
 static void handleFrame(const uint8_t mac[6], const SecFrame &f) {
   if (f.code == EV_PAIR_REQUEST) {
     if (!knownKind(f.kind)) return;
-    NodeRec *n = Nodes::adopt(mac, f.kind, f.arg == 1);
-    if (n) {
-      SecMesh.sendTo(mac, CMD_PAIR_ACCEPT, Sec::mode());
+    bool fresh = false;
+    NodeRec *n = Nodes::adopt(mac, f.kind, f.arg == 1, fresh);
+    if (!n) return;
+
+    const uint32_t now = millis();
+    if (fresh || now - lastAccept > 2000) {
+      lastAccept = now;
+      SecMesh.acceptPairing(mac, Sec::mode());
+    }
+    if (fresh) {
       IO::beep(2, 60, 60);
+      Sec::showToast("MODULE PAIRED", 1);
       UI::invalidate();
     }
     return;
@@ -89,7 +100,7 @@ void setup() {
   Climate::begin();
 
   pinMode(PIN_TAMPER, INPUT_PULLUP);
-  tamperLast = digitalRead(PIN_TAMPER) == HIGH;
+  tamperLast = tamperRaw = digitalRead(PIN_TAMPER) == HIGH;
 
   UI::boot("network");
   Net::begin();
@@ -143,7 +154,10 @@ void loop() {
   }
 
   const bool tamper = digitalRead(PIN_TAMPER) == HIGH;
-  if (tamper != tamperLast) {
+  if (tamper != tamperRaw) {
+    tamperRaw = tamper;
+    tamperEdge = millis();
+  } else if (tamper != tamperLast && millis() - tamperEdge > 250) {
     tamperLast = tamper;
     Sec::onHubTamper(tamper);
     UI::invalidate();

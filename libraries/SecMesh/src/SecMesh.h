@@ -33,6 +33,10 @@ class SecMeshClass {
   void loadClaim();
   void clearClaim();
 
+  void acceptPairing(const uint8_t mac[6], uint8_t mode);
+  bool onPairAccept(const uint8_t mac[6], const SecFrame &f);
+  static uint16_t macTail(const uint8_t mac[6]);
+
   bool send(uint8_t code, uint8_t arg = 0, uint16_t value = 0);
   bool sendUrgent(uint8_t code, uint8_t arg = 0, uint16_t value = 0);
 

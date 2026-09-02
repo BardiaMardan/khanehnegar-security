@@ -73,7 +73,7 @@ void SecMeshClass::loadClaim() {
   memcpy(_hubMac, mac, 6);
   _hasHub = true;
   _flags |= SF_PAIRED;
-  addPeer(_hubMac, false);
+  addPeer(_hubMac, true);
 }
 
 void SecMeshClass::clearClaim() {
@@ -81,11 +81,28 @@ void SecMeshClass::clearClaim() {
   forgetHub();
 }
 
+uint16_t SecMeshClass::macTail(const uint8_t mac[6]) {
+  return (uint16_t)((mac[4] << 8) | mac[5]);
+}
+
 void SecMeshClass::setHub(const uint8_t mac[6]) {
   memcpy(_hubMac, mac, 6);
   _hasHub = true;
   _flags |= SF_PAIRED;
+  addPeer(_hubMac, true);
   writeClaim(mac, true);
+}
+
+void SecMeshClass::acceptPairing(const uint8_t mac[6], uint8_t mode) {
+  addPeer(mac, true);
+  broadcast(CMD_PAIR_ACCEPT, mode, macTail(mac));
+}
+
+bool SecMeshClass::onPairAccept(const uint8_t mac[6], const SecFrame &f) {
+  if (_hasHub) return false;
+  if (f.value != macTail(_mac)) return false;
+  setHub(mac);
+  return true;
 }
 
 void SecMeshClass::forgetHub() {
@@ -95,12 +112,7 @@ void SecMeshClass::forgetHub() {
 }
 
 void SecMeshClass::requestPairing() {
-#if defined(ESP8266)
-  const uint8_t wantsEncryption = 0;
-#else
-  const uint8_t wantsEncryption = 1;
-#endif
-  broadcast(EV_PAIR_REQUEST, wantsEncryption, 0);
+  broadcast(EV_PAIR_REQUEST, 1, 0);
 }
 
 void SecMeshClass::setChannel(uint8_t ch) {

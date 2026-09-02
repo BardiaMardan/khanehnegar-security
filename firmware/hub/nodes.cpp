@@ -21,8 +21,9 @@ NodeRec *find(const uint8_t mac[6]) {
   return nullptr;
 }
 
-NodeRec *adopt(const uint8_t mac[6], uint8_t kind, bool encrypted) {
+NodeRec *adopt(const uint8_t mac[6], uint8_t kind, bool encrypted, bool &fresh) {
   NodeRec *n = find(mac);
+  fresh = false;
   if (!n) {
     if (!g_pairing) return nullptr;
     for (int i = 0; i < SECMESH_MAX_NODES; i++) {
@@ -32,6 +33,7 @@ NodeRec *adopt(const uint8_t mac[6], uint8_t kind, bool encrypted) {
     memset(n, 0, sizeof(NodeRec));
     memcpy(n->mac, mac, 6);
     n->used = true;
+    fresh = true;
   }
   n->kind        = kind;
   n->encrypted   = encrypted;
@@ -39,14 +41,20 @@ NodeRec *adopt(const uint8_t mac[6], uint8_t kind, bool encrypted) {
   n->lastCounter = 0;
   n->dead        = false;
   SecMesh.addPeer(mac, encrypted);
-  save();
+  if (fresh) save();
   return n;
 }
 
 bool acceptCounter(NodeRec *n, uint32_t counter) {
-  if (counter <= n->lastCounter) return false;
-  n->lastCounter = counter;
-  return true;
+  if (counter > n->lastCounter) {
+    n->lastCounter = counter;
+    return true;
+  }
+  if (n->lastCounter - counter > 1000) {
+    n->lastCounter = counter;
+    return true;
+  }
+  return false;
 }
 
 void touchSeen(NodeRec *n, const SecFrame &f) {
@@ -61,7 +69,6 @@ void tick() {
   const uint32_t now = millis();
   for (int i = 0; i < SECMESH_MAX_NODES; i++) {
     if (!g[i].used || g[i].dead) continue;
-    if (g[i].lastCounter == 0) continue;
     if (now - g[i].lastSeen > SECMESH_DEAD_MS) {
       g[i].dead = true;
       justDied = &g[i];

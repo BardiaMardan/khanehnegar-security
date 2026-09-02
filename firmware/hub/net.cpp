@@ -127,7 +127,12 @@ void decide(uint32_t id, bool allowed) {
   http.end();
 }
 
-void publishRoster() { g_rosterDue = true; }
+static void sendRoster();
+
+void publishRoster() {
+  g_rosterDue = true;
+  if (g_online) sendRoster();
+}
 
 static void sendRoster() {
   HTTPClient http;

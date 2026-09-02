@@ -19,7 +19,7 @@ export default function FingerList({ initial, locale, t, other }) {
 
   useEffect(() => () => clearInterval(timer.current), [])
 
-  function watch(approval) {
+  function watch(approval, target) {
     clearInterval(timer.current)
     timer.current = setInterval(async () => {
       const res = await fetch(`/api/approval?id=${approval}`, { cache: 'no-store' })
@@ -31,6 +31,7 @@ export default function FingerList({ initial, locale, t, other }) {
       setBusyId(0)
       if (state === 'allowed') {
         setStatus(t.approved)
+        setFingers((list) => list.filter((f) => f.id !== target))
         reload()
       } else if (state === 'denied') {
         setStatus(t.denied)
@@ -54,7 +55,7 @@ export default function FingerList({ initial, locale, t, other }) {
       setStatus(body.reason === 'busy' ? t.busy : t.expired)
       return
     }
-    watch(body.approval)
+    watch(body.approval, id)
   }
 
   return (

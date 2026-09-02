@@ -17,6 +17,9 @@ extern String   g_pin;
 bool     hit(const Btn &b, int16_t x, int16_t y);
 void     drawBtn(const Btn &b, uint16_t fill, uint16_t text, uint8_t font = 2);
 void     label(int16_t x, int16_t y, const String &s, uint16_t fg, uint8_t font, uint16_t pad);
+void     panel(int16_t x, int16_t y, int16_t w, int16_t h);
+void     caption(int16_t x, int16_t y, const char *s);
+void     rightLabel(int16_t x, int16_t y, const String &s, uint16_t fg, uint8_t font, uint16_t pad);
 uint16_t modeColour(uint8_t m);
 
 Btn  keyAt(int i);

@@ -19,16 +19,28 @@ static uint8_t  g_step      = 0;
 static uint16_t g_enrollId  = 0;
 static uint16_t g_lastId    = 0;
 static uint32_t g_guard     = 0;
+static uint32_t g_lastPoll  = 0;
 
 void begin() {
+#if FP_TOUCH_GATE
   pinMode(PIN_FP_TOUCH, INPUT);
+#endif
   port.begin(FP_BAUD, SERIAL_8N1, PIN_FP_RX, PIN_FP_TX);
   delay(400);
-  g_present = sensor.verifyPassword();
-  if (g_present) {
-    sensor.getTemplateCount();
-    g_count = sensor.templateCount;
+
+  for (uint8_t attempt = 0; attempt < 3 && !g_present; attempt++) {
+    g_present = sensor.verifyPassword();
+    if (!g_present) delay(300);
   }
+
+  if (!g_present) {
+    Serial.println("fp: no reply on uart2. check 3v3 logic, 5v supply, rx/tx swap");
+    return;
+  }
+
+  sensor.LEDcontrol(true);
+  sensor.getTemplateCount();
+  g_count = sensor.templateCount;
 }
 
 bool present() { return g_present; }
@@ -141,7 +153,12 @@ void tick() {
     return;
   }
 
+  if (now - g_lastPoll < FP_POLL_MS) return;
+  g_lastPoll = now;
+
+#if FP_TOUCH_GATE
   if (digitalRead(PIN_FP_TOUCH) == LOW) return;
+#endif
 
   if (sensor.getImage() != FINGERPRINT_OK) return;
   if (sensor.image2Tz() != FINGERPRINT_OK) return;

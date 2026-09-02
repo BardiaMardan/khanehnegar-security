@@ -60,7 +60,13 @@ void drawStatus(bool full) {
 
   if (full) {
     tft.fillRect(0, BANNER_H, SCR_W, NAV_TOP - BANNER_H, COL_BG);
-    tft.drawRoundRect(6, 84, 228, 12, 3, COL_PANEL);
+    tft.drawRoundRect(6, 82, 228, 10, 3, COL_PANEL);
+    panel(6, 100, 228, 46);
+    panel(6, 152, 228, 46);
+    caption(16, 106, "MODULES");
+    caption(16, 158, "CLIMATE");
+    caption(150, 106, "LINK");
+    caption(150, 158, "HUMIDITY");
   }
 
   if (full || m != g_lastMode) {
@@ -83,34 +89,28 @@ void drawStatus(bool full) {
         waiting ? COL_WARN : COL_TEXT, 2, 168);
 
   const uint32_t cd = Sec::countdownMs();
-  label(182, 58, cd ? String(cd / 1000) + "s" : String(""), COL_WARN, 2, 50);
+  rightLabel(232, 58, cd ? String(cd / 1000) + "s" : String(""), COL_WARN, 2, 50);
 
   const int r = constrain(Sec::risk(), 0, RISK_MAX);
   const int w = map(r, 0, RISK_MAX, 0, 224);
   const uint16_t rc = r >= RISK_ALARM_THRESHOLD ? COL_BAD : r > 0 ? COL_WARN : COL_BG;
-  if (w) tft.fillRect(8, 86, w, 8, rc);
-  if (w < 224) tft.fillRect(8 + w, 86, 224 - w, 8, COL_BG);
+  if (w) tft.fillRect(8, 84, w, 6, rc);
+  if (w < 224) tft.fillRect(8 + w, 84, 224 - w, 6, COL_BG);
 
-  String aux = String(Nodes::liveCount()) + " mod";
-  if (Nodes::deadCount()) aux += "/" + String(Nodes::deadCount()) + " lost";
+  const int lost = Nodes::deadCount();
+  label(16, 120, String(Nodes::liveCount()) + " online", lost ? COL_WARN : COL_OK, 4, 124);
+  if (lost) label(16, 136, String(lost) + " lost", COL_BAD, 1, 124);
+  else      label(16, 136, "", COL_BG, 1, 124);
+
+  label(150, 120, Net::online() ? "NET" : "NO NET",
+        Net::online() ? COL_OK : COL_BAD, 4, 78);
+
   if (Climate::valid()) {
-    aux += "  " + String((int)Climate::tempC()) + "C " +
-                  String((int)Climate::humidity()) + "%";
+    label(16, 172, String((int)Climate::tempC()) + "C", COL_TEXT, 4, 124);
+    label(150, 172, String((int)Climate::humidity()) + "%", COL_TEXT, 4, 78);
   } else {
-    aux += "  --C --%";
-  }
-  aux += Net::online() ? "  net" : "  no net";
-  label(8, 102, aux, Net::online() ? COL_DIM : COL_WARN, 2, 224);
-
-  for (int row = 0; row < 4; row++) {
-    const int y = 128 + row * 20;
-    if (row < Journal::count()) {
-      const LogEntry &e = Journal::at(row);
-      label(8, y, String(secKindName(e.kind)) + "   " + secEventName(e.code),
-            e.silent ? COL_ACCENT : COL_TEXT, 2, 224);
-    } else {
-      label(8, y, "", COL_TEXT, 2, 224);
-    }
+    label(16, 172, "--", COL_DIM, 4, 124);
+    label(150, 172, "--", COL_DIM, 4, 78);
   }
 
   Btn b = kAction;
@@ -293,13 +293,10 @@ void drawManage(bool full) {
     NodeRec *n = Nodes::at(i);
     if (!n || !n->used) continue;
     const int y = 28 + row * 22;
-    char tail[8];
-    snprintf(tail, sizeof(tail), "%02X%02X", n->mac[4], n->mac[5]);
-    label(8,   y, secKindName(n->kind), n->dead ? COL_BAD : COL_OK, 2, 52);
-    label(64,  y, tail, COL_TEXT, 2, 40);
-    label(108, y, n->encrypted ? "AES" : "PLAIN", n->encrypted ? COL_ACCENT : COL_WARN, 2, 52);
-    label(164, y, n->dead ? "LOST" : ((n->flags & SF_TAMPER) ? "OPEN" : "ok"),
-          n->dead ? COL_BAD : COL_DIM, 2, 68);
+    label(8, y, secKindName(n->kind), COL_TEXT, 2, 70);
+    label(80, y, n->dead ? "OFFLINE" : "ONLINE", n->dead ? COL_BAD : COL_OK, 2, 72);
+    label(156, y, n->dead ? "" : secEventName(n->lastEvent),
+          (n->flags & SF_TAMPER) ? COL_BAD : COL_DIM, 1, 76);
     row++;
   }
   if (row == 0) label(8, 28, "none paired yet", COL_DIM, 2, 224);
@@ -310,8 +307,7 @@ void drawManage(bool full) {
   else if (FP::enrolling()) line = FP::enrollStep() == 1 ? "lift finger" : "place finger";
   else line = String(Fingers::count()) + " fingers   sd " +
               (Store::ready() ? "ok" : "MISSING");
-  label(8, 146, line, FP::enrolling() ? COL_WARN : COL_DIM, 2, 224);
-  label(8, 168, "delete fingers from the web", COL_DIM, 2, 224);
+  label(8, 150, line, FP::enrolling() ? COL_WARN : COL_DIM, 2, 224);
 
   drawBtn(kPair,   Nodes::pairingMode() ? COL_WARN : COL_PANEL, COL_TEXT);
   drawBtn(kForget, COL_PANEL, COL_TEXT);

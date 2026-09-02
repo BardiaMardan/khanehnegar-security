@@ -4,6 +4,8 @@
 #define PIN_FP_TX      17
 #define PIN_FP_TOUCH   22
 #define FP_BAUD        57600
+#define FP_TOUCH_GATE   0
+#define FP_POLL_MS     120UL
 
 #define PIN_SD_SCK     14
 #define PIN_SD_MOSI    13
