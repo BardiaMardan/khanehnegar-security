@@ -113,7 +113,7 @@ static void calibrate() {
   char key[8];
   snprintf(key, sizeof(key), "tcal%d", UI_ROTATION);
 
-  p.begin("khaneh", true);
+  p.begin(NVS_NAMESPACE, true);
   const size_t got = p.getBytes(key, cal, sizeof(cal));
   p.end();
 
@@ -130,7 +130,7 @@ static void calibrate() {
   delay(1200);
   tft.calibrateTouch(cal, COL_TEXT, COL_BG, 15);
 
-  p.begin("khaneh", false);
+  p.begin(NVS_NAMESPACE, false);
   p.putBytes(key, cal, sizeof(cal));
   p.end();
   tft.setTouch(cal);

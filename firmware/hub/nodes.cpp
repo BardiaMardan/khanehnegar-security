@@ -100,7 +100,7 @@ void setPairingMode(bool on) {
 bool pairingMode() { return g_pairing; }
 
 void save() {
-  prefs.begin("khaneh", false);
+  prefs.begin(NVS_NAMESPACE, false);
   for (int i = 0; i < SECMESH_MAX_NODES; i++) {
     char key[8];
     snprintf(key, sizeof(key), "n%d", i);
@@ -118,7 +118,7 @@ void save() {
 }
 
 void load() {
-  prefs.begin("khaneh", true);
+  prefs.begin(NVS_NAMESPACE, true);
   for (int i = 0; i < SECMESH_MAX_NODES; i++) {
     char key[8];
     snprintf(key, sizeof(key), "n%d", i);
