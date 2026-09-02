@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { signOut } from '../../lib/auth-client'
 import Tabs from './Tabs'
+import Controls from './Controls'
 
 function stamp(event, locale, fallback) {
   const seconds = event.epoch || event.receivedAt
@@ -56,6 +57,8 @@ export default function Feed({ initial, locale, t, other }) {
       </header>
 
       <Tabs locale={locale} t={t} active="events" />
+
+      <Controls t={t} />
 
       {events.length === 0 ? (
         <p className="empty">{t.empty}</p>

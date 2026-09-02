@@ -39,6 +39,7 @@ enum SecEvent : uint8_t {
   EV_FINGER_REMOVED = 41,
   EV_APPROVED       = 42,
   EV_DENIED         = 43,
+  EV_FINGER_RENAMED = 44,
 };
 
 enum SecCommand : uint8_t {
@@ -100,6 +101,7 @@ inline const char *secEventName(uint8_t e) {
     case EV_PIN_CHANGED:    return "code changed";
     case EV_FINGER_ADDED:   return "finger added";
     case EV_FINGER_REMOVED: return "finger removed";
+    case EV_FINGER_RENAMED: return "finger renamed";
     case EV_APPROVED:       return "approved";
     case EV_DENIED:         return "refused";
     default:                return "event";

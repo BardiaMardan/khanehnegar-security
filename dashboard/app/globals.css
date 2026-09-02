@@ -244,6 +244,36 @@ button.danger {
   margin: 14px 2px 0;
 }
 
+.controls {
+  margin-bottom: 16px;
+  padding: 14px 16px;
+}
+
+.controls-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.controls-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rename {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.rename input {
+  width: 130px;
+  padding: 6px 10px;
+  font-size: 14px;
+}
+
 .login {
   max-width: 380px;
   width: 100%;

@@ -4,10 +4,11 @@ import path from 'path'
 const DIR = path.join(process.cwd(), 'data')
 const FILE = path.join(DIR, 'commands.json')
 const APPROVAL_TTL_MS = 45000
-const NAMES = ['unlock', 'panic', 'arm', 'disarm']
+const NAMES = ['unlock', 'lock', 'panic', 'arm', 'disarm']
 
 const EMPTY = {
-  pending: { unlock: false, panic: false, arm: false, disarm: false },
+  pending: { unlock: false, lock: false, panic: false, arm: false, disarm: false },
+  renames: [],
   approval: null,
   decided: null,
   nextId: 1,
@@ -65,6 +66,8 @@ export function drain() {
   return withState((state) => {
     const snapshot = { ...state.pending }
     for (const name of NAMES) state.pending[name] = false
+    const renames = state.renames || []
+    state.renames = []
     const approve = state.approval
       ? {
           id: state.approval.id,
@@ -73,7 +76,16 @@ export function drain() {
           text: state.approval.text,
         }
       : null
-    return { ...snapshot, approve }
+    return { ...snapshot, renames, approve }
+  })
+}
+
+export function queueRename(id, label) {
+  return withState((state) => {
+    if (!Array.isArray(state.renames)) state.renames = []
+    state.renames = state.renames.filter((r) => r.id !== id)
+    state.renames.push({ id, label })
+    return true
   })
 }
 

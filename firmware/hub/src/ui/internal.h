@@ -34,5 +34,6 @@ bool keypadTouch(int16_t x, int16_t y);
 void drawLog(bool full);
 void drawManage(bool full);
 bool manageTouch(int16_t x, int16_t y);
+void drawStandby(bool full);
 void resetKeypad();
 }

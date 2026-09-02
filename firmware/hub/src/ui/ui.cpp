@@ -20,6 +20,8 @@ static uint32_t g_touchGuard  = 0;
 static bool     g_toastShown  = false;
 static bool     g_popupShown  = false;
 static bool     g_grantShown  = false;
+static bool     g_standby     = false;
+static uint32_t g_lastActivity = 0;
 static uint8_t  g_bootStep    = 0;
 static bool     g_booting     = true;
 
@@ -150,9 +152,26 @@ void ready() {
   tft.fillScreen(COL_BG);
   g_full = true;
   g_dirty = true;
+  g_lastActivity = millis();
 }
 
 void invalidate() { g_dirty = true; }
+
+void wake() {
+  g_lastActivity = millis();
+  g_dirty = true;
+}
+
+bool standby() { return g_standby; }
+
+static bool standbyAllowed() {
+  if (Access::pending() || Access::granted()) return false;
+  if (Sec::lockdown() || Sec::arming()) return false;
+  if (Sec::toastAge() < TOAST_MS) return false;
+  const uint8_t m = Sec::mode();
+  return m == MODE_DISARMED || m == MODE_HOME || m == MODE_AWAY;
+}
+
 Page page() { return g_page; }
 
 void go(Page p) {
@@ -248,8 +267,13 @@ void tick() {
       const int16_t tx = (int16_t)rx;
       const int16_t ty = (int16_t)ry;
       g_touchGuard = now + 220;
+      g_lastActivity = now;
 
-      if (popupLive()) {
+      if (g_standby) {
+        g_standby = false;
+        go(PAGE_STATUS);
+        g_full = true;
+      } else if (popupLive()) {
         if      (hit(kAllow, tx, ty)) Sec::decideApproval(true);
         else if (hit(kDeny, tx, ty))  Sec::decideApproval(false);
         g_dirty = true;
@@ -266,6 +290,24 @@ void tick() {
         if (handled) g_dirty = true;
       }
     }
+  }
+
+  const bool wantStandby = standbyAllowed() && (now - g_lastActivity > STANDBY_AFTER_MS);
+
+  if (wantStandby != g_standby) {
+    g_standby = wantStandby;
+    g_full = true;
+    g_drawn = (Page)255;
+    if (!g_standby) go(PAGE_STATUS);
+  }
+
+  if (g_standby) {
+    const bool full = g_full;
+    if (!full && now - g_lastPaint < 1000) return;
+    g_full = false;
+    g_lastPaint = now;
+    drawStandby(full);
+    return;
   }
 
   if (popupLive()) {

@@ -93,6 +93,11 @@ bool takeLatched() {
   return v;
 }
 
+void latchRemote() {
+  latch();
+  g_latched = false;
+}
+
 bool clearLockdown() {
   if (!g_lockdown) return false;
   g_lockdown = false;

@@ -366,4 +366,34 @@ bool manageTouch(int16_t x, int16_t y) {
   return false;
 }
 
+void drawStandby(bool full) {
+  const uint8_t  m = Sec::displayMode();
+  const uint16_t c = modeColour(m);
+
+  if (full) {
+    tft.fillScreen(COL_BG);
+    caption(96, 236, "TEMPERATURE");
+    caption(96, 276, "HUMIDITY");
+  }
+
+  tft.setTextDatum(MC_DATUM);
+  tft.setTextPadding(230);
+  tft.setTextColor(COL_TEXT, COL_BG);
+  tft.drawString(Store::clockHHMM(), SCR_W / 2, 108, 7);
+
+  tft.setTextPadding(180);
+  tft.setTextColor(COL_DIM, COL_BG);
+  tft.drawString(Store::dayStamp(), SCR_W / 2, 152, 2);
+
+  tft.setTextPadding(200);
+  tft.setTextColor(c, COL_BG);
+  tft.drawString(secModeName(m), SCR_W / 2, 190, 4);
+  tft.setTextPadding(0);
+
+  const String t = Climate::valid() ? String((int)Climate::tempC()) + "C" : String("--");
+  const String h = Climate::valid() ? String((int)Climate::humidity()) + "%" : String("--");
+  rightLabel(86, 230, t, COL_TEXT, 4, 76);
+  rightLabel(86, 270, h, COL_TEXT, 4, 76);
+}
+
 }

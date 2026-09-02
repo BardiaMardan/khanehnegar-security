@@ -1,35 +1,32 @@
 import { checkApiKey } from '../../../lib/apikey'
 
+function offsetMinutes(tz, at) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    timeZoneName: 'longOffset',
+  }).formatToParts(at)
+
+  const name = parts.find((p) => p.type === 'timeZoneName')?.value || 'GMT+00:00'
+  const match = name.match(/GMT([+-])(\d{2}):(\d{2})/)
+  if (!match) return 0
+
+  const sign = match[1] === '-' ? -1 : 1
+  return sign * (Number(match[2]) * 60 + Number(match[3]))
+}
+
 export async function GET(request) {
   if (!checkApiKey(request)) {
     return Response.json({ ok: false }, { status: 401 })
   }
 
   const tz = process.env.SITE_TIMEZONE || 'Asia/Tehran'
-
-  try {
-    const res = await fetch(`https://utctime.app/api/now/${encodeURIComponent(tz)}`, {
-      cache: 'no-store',
-      signal: AbortSignal.timeout(5000),
-    })
-    if (res.ok) {
-      const data = await res.json()
-      return Response.json({
-        unix: data.unix,
-        offset: data.utc_offset_minutes,
-        source: 'utctime',
-      })
-    }
-  } catch {}
-
   const now = new Date()
-  const local = new Date(now.toLocaleString('en-US', { timeZone: tz }))
-  const utc = new Date(now.toLocaleString('en-US', { timeZone: 'UTC' }))
-  const offset = Math.round((local - utc) / 60000)
 
   return Response.json({
+    ok: true,
     unix: Math.floor(now.getTime() / 1000),
-    offset,
-    source: 'server',
+    offset: offsetMinutes(tz, now),
+    zone: tz,
+    iso: now.toISOString(),
   })
 }

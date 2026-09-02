@@ -9,6 +9,8 @@ const POLL_MS = 1500
 export default function FingerList({ initial, locale, t, other }) {
   const [fingers, setFingers] = useState(initial)
   const [busyId, setBusyId] = useState(0)
+  const [editId, setEditId] = useState(0)
+  const [draft, setDraft] = useState('')
   const [status, setStatus] = useState('')
   const timer = useRef(null)
 
@@ -18,6 +20,26 @@ export default function FingerList({ initial, locale, t, other }) {
   }, [])
 
   useEffect(() => () => clearInterval(timer.current), [])
+
+  function startEdit(finger) {
+    setEditId(finger.id)
+    setDraft(finger.label)
+    setStatus('')
+  }
+
+  async function saveEdit(id) {
+    const label = draft.trim()
+    if (!label) return
+    setEditId(0)
+    setFingers((list) => list.map((f) => (f.id === id ? { ...f, label } : f)))
+    const res = await fetch('/api/fingers/rename', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, label }),
+    })
+    setStatus(res.ok ? t.renamed : t.failed)
+    if (res.ok) reload()
+  }
 
   function watch(approval, target) {
     clearInterval(timer.current)
@@ -81,14 +103,38 @@ export default function FingerList({ initial, locale, t, other }) {
           {fingers.map((f) => (
             <div className="row" key={f.id}>
               <span className="dot silent" />
-              <span className="what">
-                <span className="event">{f.label}</span>
-                <br />
-                <span className="kind">id {f.id}</span>
-              </span>
-              <button className="danger" disabled={busyId !== 0} onClick={() => remove(f.id)}>
-                {busyId === f.id ? t.waiting : t.remove}
-              </button>
+              {editId === f.id ? (
+                <span className="rename">
+                  <input
+                    autoFocus
+                    value={draft}
+                    maxLength={16}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') saveEdit(f.id)
+                      if (e.key === 'Escape') setEditId(0)
+                    }}
+                  />
+                  <button onClick={() => saveEdit(f.id)}>{t.save}</button>
+                  <button onClick={() => setEditId(0)}>{t.cancel}</button>
+                </span>
+              ) : (
+                <span className="what">
+                  <span className="event">{f.label}</span>
+                  <br />
+                  <span className="kind">id {f.id}</span>
+                </span>
+              )}
+              {editId === f.id ? (
+                <span />
+              ) : (
+                <span className="rename">
+                  <button onClick={() => startEdit(f)}>{t.rename}</button>
+                  <button className="danger" disabled={busyId !== 0} onClick={() => remove(f.id)}>
+                    {busyId === f.id ? t.waiting : t.remove}
+                  </button>
+                </span>
+              )}
             </div>
           ))}
         </div>

@@ -21,6 +21,7 @@ uint8_t failures();
 
 bool lockdown();
 bool clearLockdown();
+void latchRemote();
 
 bool changePin(const String &current, const String &next);
 

@@ -167,16 +167,39 @@ static void takeApproval(const String &body) {
                   (uint16_t)(arg < 0 ? 0 : arg), text.c_str());
 }
 
+static void takeRenames(const String &body) {
+  const int arr = body.indexOf("\"renames\":[");
+  if (arr < 0) return;
+  const int end = body.indexOf(']', arr);
+  if (end < 0) return;
+
+  int from = arr;
+  while (true) {
+    const int open = body.indexOf('{', from);
+    if (open < 0 || open > end) return;
+    const int close = body.indexOf('}', open);
+    if (close < 0 || close > end) return;
+
+    const String item = body.substring(open, close + 1);
+    const long id = findNumber(item, "\"id\"");
+    const String label = findString(item, "\"label\"");
+    if (id > 0 && label.length()) Sec::renameFinger((uint16_t)id, label);
+    from = close + 1;
+  }
+}
+
 static void pollCommands() {
   HTTPClient http;
   if (!openTo(http, "/api/command")) return;
   if (http.GET() == 200) {
     const String body = http.getString();
     if (flagTrue(body, "unlock")) Sec::clearLockdown("unlocked from the bot");
+    if (flagTrue(body, "lock"))   Sec::lockRemote();
     if (flagTrue(body, "panic"))  Sec::panic();
     if (flagTrue(body, "disarm")) Sec::requestArm(MODE_DISARMED);
     if (flagTrue(body, "arm"))    Sec::requestArm(MODE_AWAY);
     takeApproval(body);
+    takeRenames(body);
   }
   http.end();
 }

@@ -27,5 +27,7 @@ uint32_t epoch();
 uint32_t localEpoch();
 bool haveTime();
 String clockHHMM();
+String clockHHMMSS();
+String dayStamp();
 String hhmm(uint32_t epoch);
 }

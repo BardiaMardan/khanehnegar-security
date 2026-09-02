@@ -3,6 +3,8 @@
 #include "secrets.h"
 #include <SPI.h>
 #include <SD.h>
+#include <sys/time.h>
+#include <time.h>
 
 namespace Store {
 
@@ -14,10 +16,9 @@ static bool      g_ready = false;
 static SPIClass  sdSpi(HSPI);
 static HubConfig g_cfg;
 
-static uint32_t g_epochBase = 0;
-static uint32_t g_epochAtMs = 0;
 static int16_t  g_offsetMin = 0;
 static bool     g_haveTime  = false;
+
 
 bool ready() { return g_ready; }
 const HubConfig &config() { return g_cfg; }
@@ -128,8 +129,10 @@ void appendEvent(uint32_t ep, const char *kind, const char *event,
 }
 
 void setEpoch(uint32_t ep) {
-  g_epochBase = ep;
-  g_epochAtMs = millis();
+  struct timeval tv;
+  tv.tv_sec  = (time_t)ep;
+  tv.tv_usec = 0;
+  settimeofday(&tv, nullptr);
   g_haveTime = true;
 }
 
@@ -137,7 +140,7 @@ void setOffsetMinutes(int16_t minutes) { g_offsetMin = minutes; }
 
 uint32_t epoch() {
   if (!g_haveTime) return 0;
-  return g_epochBase + (millis() - g_epochAtMs) / 1000;
+  return (uint32_t)time(nullptr);
 }
 
 uint32_t localEpoch() {
@@ -146,19 +149,50 @@ uint32_t localEpoch() {
   return e + (int32_t)g_offsetMin * 60;
 }
 
+static bool localParts(struct tm &out) {
+  const uint32_t local = localEpoch();
+  if (!local) return false;
+  const time_t t = (time_t)local;
+  gmtime_r(&t, &out);
+  return true;
+}
+
 String hhmm(uint32_t ep) {
   if (!ep) return String("--:--");
-  const uint32_t local = ep + (int32_t)g_offsetMin * 60;
-  const uint32_t day = local % 86400UL;
+  const time_t t = (time_t)(ep + (int32_t)g_offsetMin * 60);
+  struct tm p;
+  gmtime_r(&t, &p);
   char buf[6];
-  snprintf(buf, sizeof(buf), "%02u:%02u", (unsigned)(day / 3600), (unsigned)((day % 3600) / 60));
+  snprintf(buf, sizeof(buf), "%02d:%02d", p.tm_hour, p.tm_min);
   return String(buf);
 }
 
 String clockHHMM() {
-  const uint32_t e = epoch();
-  if (!e) return String("--:--");
-  return hhmm(e);
+  struct tm p;
+  if (!localParts(p)) return String("--:--");
+  char buf[6];
+  snprintf(buf, sizeof(buf), "%02d:%02d", p.tm_hour, p.tm_min);
+  return String(buf);
+}
+
+String clockHHMMSS() {
+  struct tm p;
+  if (!localParts(p)) return String("--:--:--");
+  char buf[9];
+  snprintf(buf, sizeof(buf), "%02d:%02d:%02d", p.tm_hour, p.tm_min, p.tm_sec);
+  return String(buf);
+}
+
+String dayStamp() {
+  static const char *kDays[7] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+  static const char *kMon[12] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                 "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+  struct tm p;
+  if (!localParts(p)) return String("");
+  char buf[20];
+  snprintf(buf, sizeof(buf), "%s %d %s", kDays[p.tm_wday % 7], p.tm_mday,
+           kMon[p.tm_mon % 12]);
+  return String(buf);
 }
 
 bool haveTime() { return g_haveTime; }

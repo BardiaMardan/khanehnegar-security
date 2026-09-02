@@ -45,6 +45,7 @@
 #define CLIMATE_PERIOD_MS  30000UL
 #define TIME_SYNC_MS     3600000UL
 #define COMMAND_POLL_MS      5000UL
+#define STANDBY_AFTER_MS    60000UL
 #define UI_ROTATION            2
 
 #define NVS_NAMESPACE  "khaneh"

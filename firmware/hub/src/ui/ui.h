@@ -9,6 +9,8 @@ void boot(const char *step);
 void ready();
 void tick();
 void invalidate();
+void wake();
+bool standby();
 void go(Page p);
 Page page();
 }

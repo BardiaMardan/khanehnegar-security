@@ -60,6 +60,7 @@ static void handleFrame(const uint8_t mac[6], const SecFrame &f) {
   if (!Nodes::acceptCounter(n, f.counter)) return;
   Nodes::touchSeen(n, f);
   Sec::onNodeEvent(n, f);
+  if (f.code != EV_HEARTBEAT) UI::wake();
   UI::invalidate();
 }
 
@@ -115,22 +116,26 @@ static void handleFingerprint() {
     case FP::RES_MATCH:
       Serial.printf("finger %u score %u\n", FP::matchedId(), FP::confidence());
       Sec::onFinger(FP::matchedId(), FP::confidence());
+      UI::wake();
       UI::invalidate();
       break;
     case FP::RES_NOMATCH:
       Serial.println("finger not recognised");
       Sec::onUnknownFinger();
+      UI::wake();
       UI::invalidate();
       break;
     case FP::RES_ENROLLED:
       Sec::onEnrolled(FP::lastEnrolledId());
       Serial.printf("enrolled id %u\n", FP::lastEnrolledId());
+      UI::wake();
       UI::invalidate();
       break;
     case FP::RES_ENROLL_FAIL:
       Serial.println("enrol failed");
       Sec::showToast("ENROL FAILED", 3);
       IO::reject();
+      UI::wake();
       UI::invalidate();
       break;
     default:
@@ -160,6 +165,7 @@ void loop() {
   } else if (tamper != tamperLast && millis() - tamperEdge > 250) {
     tamperLast = tamper;
     Sec::onHubTamper(tamper);
+    UI::wake();
     UI::invalidate();
   }
 

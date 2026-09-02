@@ -114,12 +114,16 @@ static void addRisk(uint8_t kind, uint8_t code, uint16_t value) {
   raise(g_loudRisk >= RISK_ALARM_THRESHOLD, kind, code, value);
 }
 
-void onNodeEvent(NodeRec *n, const SecFrame &f) {
-  const bool armed = (g_mode == MODE_HOME || g_mode == MODE_AWAY ||
-                      g_mode == MODE_ENTRY || g_mode == MODE_ALARM);
+static bool armedNow() {
+  return g_mode == MODE_HOME || g_mode == MODE_AWAY ||
+         g_mode == MODE_ENTRY || g_mode == MODE_ALARM;
+}
 
-  const bool alwaysArmed = (f.code == EV_TAMPER_OPEN || f.code == EV_RF_JAM ||
-                            f.code == EV_RF_DEAUTH || f.code == EV_PANIC);
+void onNodeEvent(NodeRec *n, const SecFrame &f) {
+  const bool armed = armedNow();
+
+  const bool alwaysArmed = (f.code == EV_RF_JAM || f.code == EV_RF_DEAUTH ||
+                            f.code == EV_PANIC);
 
   if (f.code == EV_PANIC) { panic(); return; }
   if (f.code == EV_HEARTBEAT || f.code == EV_BOOT || f.code == EV_TAMPER_CLOSED) return;
@@ -145,6 +149,15 @@ void onHubTamper(bool open) {
     logEvent(KIND_HUB, EV_TAMPER_CLOSED, 0, false);
     return;
   }
+
+  if (!armedNow()) {
+    logEvent(KIND_HUB, EV_TAMPER_OPEN, 0, true);
+    say("panel opened");
+    showToast("PANEL OPENED", 2);
+    Net::alert(true, "PANEL", "case opened while disarmed", 0);
+    return;
+  }
+
   g_risk = RISK_MAX;
   g_loudRisk = RISK_MAX;
   raise(true, KIND_HUB, EV_TAMPER_OPEN, 0);
@@ -185,6 +198,15 @@ void enterLockdown() {
   showToast("LOCKDOWN", 3);
   logEvent(KIND_HUB, EV_LOCKDOWN, 0, true);
   Net::alert(true, "PANEL", "lockdown after failed codes", 0);
+}
+
+void lockRemote() {
+  if (Access::lockdown()) return;
+  Access::latchRemote();
+  say("LOCKED remotely");
+  showToast("LOCKDOWN", 3);
+  logEvent(KIND_HUB, EV_LOCKDOWN, 0, false);
+  Net::alert(false, "PANEL", "locked from the bot", 0);
 }
 
 void clearLockdown(const char *how) {
@@ -399,6 +421,13 @@ bool removeFinger(uint16_t id) {
   showToast(("removed " + who).c_str(), 2);
   Net::publishRoster();
   Net::alert(false, "PANEL", "fingerprint removed", id);
+  return true;
+}
+
+bool renameFinger(uint16_t id, const String &label) {
+  if (!Fingers::rename(id, label)) return false;
+  logEvent(KIND_HUB, EV_FINGER_RENAMED, id, false);
+  Net::publishRoster();
   return true;
 }
 

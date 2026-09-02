@@ -26,11 +26,13 @@ void panic();
 
 bool lockdown();
 void enterLockdown();
+void lockRemote();
 void clearLockdown(const char *how);
 
 bool enrolFinger();
 void onEnrolled(uint16_t id);
 bool removeFinger(uint16_t id);
+bool renameFinger(uint16_t id, const String &label);
 void clearFingers();
 
 void decideApproval(bool allow);
