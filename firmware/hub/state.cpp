@@ -11,9 +11,12 @@
 #include "fingers.h"
 #include "fp.h"
 #include "net.h"
+#include <Preferences.h>
 #include <SecMesh.h>
 
 namespace Sec {
+
+#define MODE_KEY "mode"
 
 // ========== [Scoring table] ==========
 struct Score { uint8_t weight; bool loud; };
@@ -88,23 +91,36 @@ static void broadcastMode() {
   }
 }
 
-static void setMode(uint8_t m) {
-  g_mode = m;
-  g_pendingMode = MODE_DISARMED;
-  g_deadline = 0;
-  broadcastMode();
+// ========== [The only way the mode ever changes] ==========
+// Every field that describes "what the system is doing right now" is written here and
+// nowhere else. Half-applied transitions were a real bug: an alarm during the exit delay
+// used to leave g_pendingMode set, so the panel showed ALARM with a CANCEL button and a
+// countdown that was still running.
+static void persistMode(uint8_t m) {
+  Preferences p;
+  p.begin(NVS_NAMESPACE, false);
+  p.putUChar(MODE_KEY, m);
+  p.end();
+}
+
+static void transition(uint8_t m, uint8_t pending, uint32_t deadline) {
+  const bool restedChanged = (g_mode != m);
+  g_mode        = m;
+  g_pendingMode = pending;
+  g_deadline    = deadline;
+  g_lastTock    = 0;
+  if (restedChanged) broadcastMode();
+  if (m == MODE_DISARMED || m == MODE_HOME || m == MODE_AWAY) persistMode(m);
 }
 
 // ========== [Alarm raising] ==========
 static void raise(bool loud, uint8_t kind, uint8_t code, uint16_t value) {
   if (loud) {
-    g_mode = MODE_ALARM;
-    g_deadline = millis() + ALARM_DURATION_MS;
+    transition(MODE_ALARM, MODE_DISARMED, millis() + ALARM_DURATION_MS);
     IO::sirenOn();
     say("ALARM");
     showToast("ALARM", 3);
     logEvent(kind, code, value, false);
-    broadcastMode();
   } else {
     g_silent = true;
     logEvent(kind, code, value, true);
@@ -150,8 +166,7 @@ void onNodeEvent(NodeRec *n, const SecFrame &f) {
   }
 
   if (g_mode == MODE_AWAY && f.code == EV_DOOR_OPEN) {
-    g_mode = MODE_ENTRY;
-    g_deadline = millis() + ENTRY_DELAY_MS;
+    transition(MODE_ENTRY, MODE_DISARMED, millis() + ENTRY_DELAY_MS);
     say("entry delay");
     IO::chime();
     logEvent(f.kind, f.code, f.value, false);
@@ -191,10 +206,17 @@ void panic() {
 
 // ========== [Arming] ==========
 void requestArm(uint8_t m) {
-  if (m == MODE_DISARMED) { setMode(MODE_DISARMED); IO::ack(); showToast("DISARMED", 1); return; }
-  g_pendingMode = m;
-  g_mode = MODE_DISARMED;
-  g_deadline = millis() + EXIT_DELAY_MS;
+  if (m == MODE_DISARMED) {
+    IO::sirenOff();
+    transition(MODE_DISARMED, MODE_DISARMED, 0);
+    g_risk = g_loudRisk = 0;
+    g_silent = false;
+    say("disarmed");
+    IO::ack();
+    showToast("DISARMED", 1);
+    return;
+  }
+  transition(MODE_DISARMED, m, millis() + EXIT_DELAY_MS);
   g_risk = g_loudRisk = 0;
   say("arming, leave now");
   showToast("ARMING, LEAVE NOW", 2);
@@ -203,14 +225,11 @@ void requestArm(uint8_t m) {
 
 static void doDisarm() {
   IO::sirenOff();
-  g_mode = MODE_DISARMED;
-  g_pendingMode = MODE_DISARMED;
-  g_deadline = 0;
+  transition(MODE_DISARMED, MODE_DISARMED, 0);
   g_risk = g_loudRisk = 0;
   g_silent = false;
   say("disarmed");
   IO::ack();
-  broadcastMode();
 }
 
 // ========== [Lockdown] ==========
@@ -353,6 +372,21 @@ void begin() {
   Access::begin();
   Journal::begin();
   Fingers::begin();
+
+  // The armed state survives a power cut. ALARM and ENTRY are not restored as themselves —
+  // coming back from a reset screaming, or mid entry-delay, is wrong. Both restore to AWAY,
+  // which is what they were protecting.
+  Preferences p;
+  p.begin(NVS_NAMESPACE, true);
+  const uint8_t saved = p.getUChar(MODE_KEY, MODE_DISARMED);
+  p.end();
+
+  if (saved == MODE_HOME || saved == MODE_AWAY) {
+    g_mode = saved;
+    say(saved == MODE_AWAY ? "armed, restored after restart" : "home, restored after restart");
+    logEvent(KIND_HUB, EV_ARMED, saved, false);
+  }
+
   if (Access::lockdown()) say("LOCKED, unlock remotely");
   g_decayAt = millis();
 }
@@ -393,17 +427,13 @@ void tick() {
   } else if (g_mode == MODE_ALARM) {
     if (now >= g_deadline) {
       IO::sirenOff();
-      g_mode = MODE_AWAY;
-      g_deadline = 0;
+      transition(MODE_AWAY, MODE_DISARMED, 0);
       say("alarm timed out, armed");
-      broadcastMode();
     }
   } else if (g_pendingMode != MODE_DISARMED) {
     if (now - g_lastTock > 1000) { g_lastTock = now; IO::tickTock(); }
     if (now >= g_deadline) {
-      const uint8_t m = g_pendingMode;
-      g_pendingMode = MODE_DISARMED;
-      setMode(m);
+      transition(g_pendingMode, MODE_DISARMED, 0);
       say("armed");
       showToast("ARMED", 2);
       logEvent(KIND_HUB, EV_ARMED, 0, false);

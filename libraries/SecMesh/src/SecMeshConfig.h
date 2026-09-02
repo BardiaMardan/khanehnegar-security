@@ -13,8 +13,12 @@
 #define SECMESH_LMK         "KhanehNegarLMK01"
 
 // ========== [Liveness timing] ==========
-#define SECMESH_HEARTBEAT_MS   10000UL
-#define SECMESH_DEAD_MS        30000UL
+// Dead at two and a half missed heartbeats. This is a security system: a node going quiet
+// may mean it was destroyed, so the detection window is short at the cost of more traffic.
+#define SECMESH_HEARTBEAT_MS    5000UL
+#define SECMESH_DEAD_MS        13000UL
+// While orphaned, retry the hub this often before hopping to the next channel.
+#define SECMESH_SILENT_MS      20000UL
 
 // ========== [Roster size] ==========
 #define SECMESH_MAX_NODES      6

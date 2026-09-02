@@ -63,8 +63,21 @@ static void handleFrame(const uint8_t mac[6], const SecFrame &f) {
 
   NodeRec *n = Nodes::find(mac);
   if (!n) return;
+
+  // A node announces EV_BOOT after a restart, when its own counter is back at 1. Clearing
+  // our stored value here is what lets it rejoin immediately instead of having every frame
+  // read as a replay.
+  if (f.code == EV_BOOT) Nodes::resetCounter(n);
+
   if (!Nodes::acceptCounter(n, f.counter)) return;
+
+  const bool wasDead = n->dead;
   Nodes::touchSeen(n, f);
+
+  // Tell it the current mode the moment it reappears, so a node that missed an arm while it
+  // was away does not sit there disarmed.
+  if (f.code == EV_BOOT || wasDead) SecMesh.sendTo(mac, CMD_STATE, Sec::mode());
+
   Sec::onNodeEvent(n, f);
   if (f.code != EV_HEARTBEAT) UI::wake();
   UI::invalidate();

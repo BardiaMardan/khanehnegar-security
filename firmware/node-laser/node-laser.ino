@@ -72,6 +72,7 @@ void setup() {
     Serial.println("claim cleared");
   } else {
     SecMesh.loadClaim();
+    if (SecMesh.hasHub()) SecMesh.send(EV_BOOT);
   }
 
 #if ENABLE_CASE_TAMPER

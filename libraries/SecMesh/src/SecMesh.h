@@ -96,6 +96,7 @@ class SecMeshClass {
   uint32_t _lastPairTry      = 0;
   uint8_t  _hopChannel       = 1;
   uint32_t _lastDown         = 0;
+  uint32_t _bootAt           = 0;
 };
 
 extern SecMeshClass SecMesh;

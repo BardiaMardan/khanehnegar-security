@@ -176,10 +176,16 @@ void SecMeshClass::tick() {
   if (now - _lastHeartbeat > SECMESH_HEARTBEAT_MS) {
     _lastHeartbeat = now;
     send(EV_HEARTBEAT, 0, 0);
-    if (_lastDown && now - _lastDown > 90000UL) {
+    // Nothing heard back for a while: the hub may have moved channel, or our claim may be
+    // stale. Hop and re-announce ourselves rather than heartbeating into the void. _lastDown
+    // is zero until the first frame is accepted, so a node that has never been heard from
+    // starts hunting immediately after its first heartbeat.
+    if (now - (_lastDown ? _lastDown : _bootAt) > SECMESH_SILENT_MS) {
       _hopChannel++;
       if (_hopChannel > 13) _hopChannel = 1;
       setChannel(_hopChannel);
+      send(EV_BOOT, 0, 0);
+      requestPairing();
     }
   }
 }

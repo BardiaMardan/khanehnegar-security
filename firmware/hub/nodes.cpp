@@ -52,19 +52,26 @@ NodeRec *adopt(const uint8_t mac[6], uint8_t kind, bool encrypted, bool &fresh) 
 }
 
 // ========== [Replay protection] ==========
-// Strictly greater rejects replays; a big backwards jump is a node reboot, and rejecting
-// that permanently bricked any node that lost power.
+// Strictly greater rejects replays. A node's counter restarts at 1 after a power cut, so a
+// backwards jump into the first few frames is a reboot, not an attack — refusing it left a
+// rebooted node permanently mute, which is the worst failure this system can have.
+// An attacker would have to replay one of a node's first COUNTER_REBOOT_MAX frames, and the
+// next genuine frame resynchronises past it.
+#define COUNTER_REBOOT_MAX 8
+
 bool acceptCounter(NodeRec *n, uint32_t counter) {
   if (counter > n->lastCounter) {
     n->lastCounter = counter;
     return true;
   }
-  if (n->lastCounter - counter > 1000) {
+  if (counter <= COUNTER_REBOOT_MAX || n->lastCounter - counter > 1000) {
     n->lastCounter = counter;
     return true;
   }
   return false;
 }
+
+void resetCounter(NodeRec *n) { n->lastCounter = 0; }
 
 // ========== [Liveness] ==========
 void touchSeen(NodeRec *n, const SecFrame &f) {

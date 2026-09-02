@@ -61,6 +61,7 @@ bool SecMeshClass::begin(NodeKind kind, SecMeshRxCb cb) {
   WiFi.macAddress(_mac);
 
   addPeer(kBroadcast, false);
+  _bootAt = millis();
   return true;
 }
 

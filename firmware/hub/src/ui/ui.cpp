@@ -82,6 +82,43 @@ uint16_t modeColour(uint8_t m) {
   }
 }
 
+// Severity, not source. A node booting is information and must not look like an intrusion,
+// which it did while the list coloured every event by the sender's tamper flag.
+uint16_t eventColour(uint8_t code) {
+  switch (code) {
+    case EV_BOOT:
+    case EV_HEARTBEAT:
+    case EV_TAMPER_CLOSED:
+    case EV_DOOR_CLOSED:
+    case EV_ACCESS_OK:
+    case EV_ARMED:
+    case EV_DISARMED:
+    case EV_UNLOCKED:
+    case EV_PIN_CHANGED:
+    case EV_FINGER_ADDED:
+    case EV_FINGER_RENAMED:
+    case EV_APPROVED:
+      return COL_OK;
+
+    case EV_PRETOUCH:
+    case EV_TOUCH:
+    case EV_TILT:
+    case EV_AGITATION:
+    case EV_RF_PROBE:
+    case EV_ACCESS_DENIED:
+    case EV_DENIED:
+    case EV_FINGER_REMOVED:
+    case EV_LOW_SUPPLY:
+      return COL_WARN;
+
+    case EV_NONE:
+      return COL_DIM;
+
+    default:
+      return COL_BAD;
+  }
+}
+
 // ========== [Boot splash] ==========
 static void splashFrame() {
   tft.fillScreen(COL_BG);

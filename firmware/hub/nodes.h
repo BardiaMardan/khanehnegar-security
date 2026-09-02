@@ -25,6 +25,7 @@ void     begin();
 NodeRec *find(const uint8_t mac[6]);
 NodeRec *adopt(const uint8_t mac[6], uint8_t kind, bool encrypted, bool &fresh);
 bool     acceptCounter(NodeRec *n, uint32_t counter);
+void     resetCounter(NodeRec *n);
 void     touchSeen(NodeRec *n, const SecFrame &f);
 void     tick();
 int      capacity();

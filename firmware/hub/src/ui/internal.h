@@ -25,6 +25,7 @@ void     panel(int16_t x, int16_t y, int16_t w, int16_t h);
 void     caption(int16_t x, int16_t y, const char *s);
 void     rightLabel(int16_t x, int16_t y, const String &s, uint16_t fg, uint8_t font, uint16_t pad);
 uint16_t modeColour(uint8_t m);
+uint16_t eventColour(uint8_t code);
 
 Btn  keyAt(int i);
 int  keyHit(int16_t x, int16_t y);

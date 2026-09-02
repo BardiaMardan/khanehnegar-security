@@ -91,7 +91,7 @@ void drawStatus(bool full) {
   tft.setTextPadding(0);
 
   const bool waiting = Access::pending() && !Access::granted();
-  label(8, 58, waiting ? "web action waits for your code" : Sec::message(),
+  label(8, 58, waiting ? "WEB ACTION PENDING" : Sec::message(),
         waiting ? COL_WARN : COL_TEXT, 2, 168);
 
   const uint32_t cd = Sec::countdownMs();
@@ -103,20 +103,26 @@ void drawStatus(bool full) {
   if (w) tft.fillRect(8, 84, w, 6, rc);
   if (w < 224) tft.fillRect(8 + w, 84, 224 - w, 6, COL_BG);
 
+  // One label per cell, one line each. Two labels stacked inside a 46px panel used to
+  // overlap: a font-4 string is 26px tall, so the second row landed on top of the first.
+  // And a padded label only erases as many pixels as the padding, so "NO NET" -> "NET" left
+  // its tail on the glass until a full repaint. Both cells now use a fixed-width string and
+  // padding wider than the longest one they can hold.
   const int lost = Nodes::deadCount();
-  label(16, 120, String(Nodes::liveCount()) + " online", lost ? COL_WARN : COL_OK, 4, 124);
-  if (lost) label(16, 136, String(lost) + " lost", COL_BAD, 1, 124);
-  else      label(16, 136, "", COL_BG, 1, 124);
+  const int live = Nodes::liveCount();
+  const String modules = lost ? String(live) + "/" + String(live + lost)
+                             : String(live) + " up";
+  label(16, 118, modules, lost ? COL_BAD : COL_OK, 4, 128);
 
-  label(150, 120, Net::online() ? "NET" : "NO NET",
-        Net::online() ? COL_OK : COL_BAD, 4, 78);
+  label(150, 118, Net::online() ? "NET" : "DOWN",
+        Net::online() ? COL_OK : COL_BAD, 4, 80);
 
   if (Climate::valid()) {
-    label(16, 172, String((int)Climate::tempC()) + "C", COL_TEXT, 4, 124);
-    label(150, 172, String((int)Climate::humidity()) + "%", COL_TEXT, 4, 78);
+    label(16, 170, String((int)Climate::tempC()) + "C", COL_TEXT, 4, 128);
+    label(150, 170, String((int)Climate::humidity()) + "%", COL_TEXT, 4, 80);
   } else {
-    label(16, 172, "--", COL_DIM, 4, 124);
-    label(150, 172, "--", COL_DIM, 4, 78);
+    label(16, 170, "--", COL_DIM, 4, 128);
+    label(150, 170, "--", COL_DIM, 4, 80);
   }
 
   Btn b = kAction;
@@ -257,7 +263,7 @@ void drawLog(bool full) {
     }
     const LogEntry &e = Journal::at(i);
     label(8, y, String(secKindName(e.kind)) + "  " + secEventName(e.code),
-          e.silent ? COL_ACCENT : COL_TEXT, 2, 178);
+          e.silent ? COL_ACCENT : eventColour(e.code), 2, 178);
     tft.setTextDatum(TR_DATUM);
     tft.setTextPadding(44);
     tft.setTextColor(COL_DIM, COL_BG);
@@ -304,8 +310,9 @@ void drawManage(bool full) {
     const int y = 28 + row * 22;
     label(8, y, secKindName(n->kind), COL_TEXT, 2, 70);
     label(80, y, n->dead ? "OFFLINE" : "ONLINE", n->dead ? COL_BAD : COL_OK, 2, 72);
-    label(156, y, n->dead ? "" : secEventName(n->lastEvent),
-          (n->flags & SF_TAMPER) ? COL_BAD : COL_DIM, 1, 76);
+    label(156, y, n->dead ? "" : ((n->flags & SF_TAMPER) ? "CASE OPEN"
+                                                         : secEventName(n->lastEvent)),
+          (n->flags & SF_TAMPER) ? COL_BAD : eventColour(n->lastEvent), 1, 76);
     row++;
   }
   if (row == 0) label(8, 28, "none paired yet", COL_DIM, 2, 224);
