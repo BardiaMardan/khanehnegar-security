@@ -2,21 +2,24 @@
 #include <math.h>
 #include <SecMesh.h>
 
-#define PIN_SDA          21
-#define PIN_SCL          22
-#define PIN_DOOR         5
-#define PIN_CASE         18
-#define PIN_UNCLAIM      19
-#define PIN_LED          23
+#define PIN_SDA           21
+#define PIN_SCL           22
+#define PIN_DOOR           5
+#define PIN_CASE          18
+#define PIN_TOUCH         19
+#define PIN_LED           23
+#define PIN_UNCLAIM        0
 
 #define ENABLE_CASE_TAMPER 1
 
-#define ADXL_ADDR       0x53
-#define ADXL_BW_RATE    0x2C
-#define ADXL_POWER_CTL  0x2D
+#define ADXL_PRIMARY     0x53
+#define ADXL_ALTERNATE   0x1D
+#define ADXL_DEVID       0x00
+#define ADXL_BW_RATE     0x2C
+#define ADXL_POWER_CTL   0x2D
 #define ADXL_DATA_FORMAT 0x31
-#define ADXL_DATAX0     0x32
-#define ADXL_SCALE_G    0.0039f
+#define ADXL_DATAX0      0x32
+#define ADXL_SCALE_G     0.0039f
 
 #define IMPACT_G         1.30f
 #define AGITATE_G        0.09f
@@ -27,6 +30,13 @@
 #define IMPACT_HOLDOFF  1500UL
 #define REST_G           0.04f
 #define REST_SETTLE_MS  4000UL
+
+#define TOUCH_DEBOUNCE_MS   50UL
+#define TOUCH_REARM_MS    4000UL
+#define TOUCH_STUCK_MS   30000UL
+
+static uint8_t  adxlAddr    = ADXL_PRIMARY;
+static bool     adxlReady   = false;
 
 static bool     doorOpen    = false;
 static uint8_t  hubMode     = MODE_DISARMED;
@@ -41,18 +51,44 @@ static float    baseX = 0, baseY = 0, baseZ = 1;
 static bool     haveBase    = false;
 static uint32_t lastSample  = 0;
 
+static bool     touchRaw    = false;
+static bool     touchStable = false;
+static uint32_t touchEdge   = 0;
+static uint32_t touchSince  = 0;
+static uint32_t touchSent   = 0;
+static bool     touchStuck  = false;
+
 static void adxlWrite(uint8_t reg, uint8_t val) {
-  Wire.beginTransmission(ADXL_ADDR);
+  Wire.beginTransmission(adxlAddr);
   Wire.write(reg);
   Wire.write(val);
   Wire.endTransmission();
 }
 
+static bool adxlPing(uint8_t addr) {
+  Wire.beginTransmission(addr);
+  Wire.write(ADXL_DEVID);
+  if (Wire.endTransmission(false) != 0) return false;
+  if (Wire.requestFrom(addr, 1) != 1) return false;
+  return Wire.read() == 0xE5;
+}
+
+static bool adxlBegin() {
+  if (adxlPing(ADXL_PRIMARY))        adxlAddr = ADXL_PRIMARY;
+  else if (adxlPing(ADXL_ALTERNATE)) adxlAddr = ADXL_ALTERNATE;
+  else return false;
+
+  adxlWrite(ADXL_DATA_FORMAT, 0x0B);
+  adxlWrite(ADXL_BW_RATE, 0x0C);
+  adxlWrite(ADXL_POWER_CTL, 0x08);
+  return true;
+}
+
 static bool adxlRead(float &x, float &y, float &z) {
-  Wire.beginTransmission(ADXL_ADDR);
+  Wire.beginTransmission(adxlAddr);
   Wire.write(ADXL_DATAX0);
   if (Wire.endTransmission(false) != 0) return false;
-  if (Wire.requestFrom(ADXL_ADDR, 6) != 6) return false;
+  if (Wire.requestFrom(adxlAddr, 6) != 6) return false;
 
   int16_t raw[3];
   for (int i = 0; i < 3; i++) {
@@ -83,9 +119,38 @@ static void onRx(const uint8_t mac[6], const SecFrame &f) {
   }
 }
 
+static void sampleTouch() {
+  const uint32_t now = millis();
+  const bool raw = digitalRead(PIN_TOUCH) == HIGH;
+
+  if (raw != touchRaw) {
+    touchRaw = raw;
+    touchEdge = now;
+    return;
+  }
+
+  if (now - touchEdge < TOUCH_DEBOUNCE_MS) return;
+  if (raw == touchStable) {
+    if (raw && !touchStuck && now - touchSince > TOUCH_STUCK_MS) touchStuck = true;
+    return;
+  }
+
+  touchStable = raw;
+
+  if (!raw) {
+    touchStuck = false;
+    return;
+  }
+
+  touchSince = now;
+  if (now - touchSent < TOUCH_REARM_MS) return;
+  touchSent = now;
+  SecMesh.sendUrgent(EV_TOUCH);
+}
+
 static void sampleAccel() {
   const uint32_t now = millis();
-  if (now - lastSample < 20) return;
+  if (!adxlReady || now - lastSample < 20) return;
   lastSample = now;
 
   float x, y, z;
@@ -152,11 +217,13 @@ void setup() {
   pinMode(PIN_LED, OUTPUT);
   digitalWrite(PIN_LED, HIGH);
   pinMode(PIN_DOOR, INPUT_PULLUP);
+  pinMode(PIN_TOUCH, INPUT);
 
   Wire.begin(PIN_SDA, PIN_SCL);
-  adxlWrite(ADXL_DATA_FORMAT, 0x0B);
-  adxlWrite(ADXL_BW_RATE, 0x0C);
-  adxlWrite(ADXL_POWER_CTL, 0x08);
+  adxlReady = adxlBegin();
+  Serial.printf("adxl345: %s", adxlReady ? "ok at 0x" : "NOT FOUND");
+  if (adxlReady) Serial.println(adxlAddr, HEX);
+  else Serial.println();
 
   if (!SecMesh.begin(KIND_DOOR, onRx)) {
     Serial.println("FATAL: ESP-NOW would not start");
@@ -176,6 +243,7 @@ void setup() {
 #endif
 
   doorOpen = digitalRead(PIN_DOOR) == HIGH;
+  touchRaw = touchStable = digitalRead(PIN_TOUCH) == HIGH;
   Serial.print("door node mac: ");
   Serial.println(SecMeshClass::macToStr(SecMesh.selfMac()));
 }
@@ -193,5 +261,6 @@ void loop() {
     delay(60);
   }
 
+  sampleTouch();
   sampleAccel();
 }

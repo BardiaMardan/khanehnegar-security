@@ -1,16 +1,16 @@
 #include <SecMesh.h>
 
-#define PIN_LDR         34
-#define PIN_LASER       26
-#define PIN_CASE        25
+#define PIN_LDR         A0
+#define PIN_LASER       14
+#define PIN_CASE        12
 #define PIN_LED          2
 #define PIN_UNCLAIM      0
 
 #define ENABLE_CASE_TAMPER 1
 
-#define SAMPLE_MS         40UL
-#define SETTLE_US       4000
-#define MIN_CONTRAST      350
+#define SAMPLE_MS         60UL
+#define SETTLE_MS         15UL
+#define MIN_CONTRAST       80
 #define BREAK_CONFIRM       3
 #define CLEAR_CONFIRM       5
 
@@ -20,6 +20,8 @@ static uint8_t  breaks   = 0;
 static uint8_t  clears   = 0;
 static bool     tripped  = false;
 static int      baseline = 0;
+
+static void showLed(bool on) { digitalWrite(PIN_LED, on ? LOW : HIGH); }
 
 static void onRx(const uint8_t mac[6], const SecFrame &f) {
   switch (f.code) {
@@ -31,7 +33,7 @@ static void onRx(const uint8_t mac[6], const SecFrame &f) {
       hubMode = f.arg;
       break;
     case CMD_IDENTIFY:
-      for (int i = 0; i < 6; i++) { digitalWrite(PIN_LED, i % 2); delay(120); }
+      for (int i = 0; i < 6; i++) { showLed(i % 2); delay(120); }
       break;
     default:
       break;
@@ -40,11 +42,11 @@ static void onRx(const uint8_t mac[6], const SecFrame &f) {
 
 static int contrast() {
   digitalWrite(PIN_LASER, LOW);
-  delayMicroseconds(SETTLE_US);
+  delay(SETTLE_MS);
   const int dark = analogRead(PIN_LDR);
 
   digitalWrite(PIN_LASER, HIGH);
-  delayMicroseconds(SETTLE_US);
+  delay(SETTLE_MS);
   const int lit = analogRead(PIN_LDR);
 
   return lit - dark;
@@ -53,11 +55,9 @@ static int contrast() {
 void setup() {
   Serial.begin(115200);
   pinMode(PIN_LED, OUTPUT);
-  digitalWrite(PIN_LED, LOW);
+  showLed(false);
   pinMode(PIN_LASER, OUTPUT);
   digitalWrite(PIN_LASER, HIGH);
-  analogReadResolution(12);
-  analogSetPinAttenuation(PIN_LDR, ADC_11db);
 
   if (!SecMesh.begin(KIND_LASER, onRx)) {
     Serial.println("FATAL: ESP-NOW would not start");
@@ -66,7 +66,7 @@ void setup() {
   pinMode(PIN_UNCLAIM, INPUT_PULLUP);
   if (digitalRead(PIN_UNCLAIM) == LOW) {
     SecMesh.clearClaim();
-    for (int i = 0; i < 10; i++) { digitalWrite(PIN_LED, i % 2); delay(80); }
+    for (int i = 0; i < 10; i++) { showLed(i % 2); delay(80); }
     Serial.println("claim cleared");
   } else {
     SecMesh.loadClaim();
@@ -92,8 +92,8 @@ void setup() {
 void loop() {
   SecMesh.tick();
 
-  digitalWrite(PIN_LED, SecMesh.hasHub() ? (tripped ? HIGH : LOW)
-                                         : ((millis() / 400) % 2));
+  if (!SecMesh.hasHub())   showLed((millis() / 400) % 2);
+  else                     showLed(tripped);
 
   const uint32_t now = millis();
   if (now - lastScan < SAMPLE_MS) return;
@@ -107,7 +107,7 @@ void loop() {
     if (breaks < 255) breaks++;
     if (!tripped && breaks >= BREAK_CONFIRM) {
       tripped = true;
-      SecMesh.sendUrgent(EV_LASER_CUT, 0, (uint16_t)c);
+      SecMesh.sendUrgent(EV_LASER_CUT, 0, (uint16_t)(c < 0 ? 0 : c));
       Serial.printf("beam cut, contrast %d\n", c);
     }
   } else {
