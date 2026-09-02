@@ -1,10 +1,10 @@
 import { Vazirmatn } from 'next/font/google'
-import { locales, isRtl } from '../../lib/i18n'
+import { locales, isRtl, dict } from '../../lib/i18n'
 import '../globals.css'
 
 const vazir = Vazirmatn({
   subsets: ['arabic', 'latin'],
-  weight: ['400', '700', '900'],
+  weight: ['400', '500', '600', '700'],
   display: 'swap',
 })
 
@@ -19,10 +19,27 @@ export function generateStaticParams() {
 
 export default async function LocaleLayout({ children, params }) {
   const { locale } = await params
+  const t = dict(locale)
+
   return (
     <html lang={locale} dir={isRtl(locale) ? 'rtl' : 'ltr'}>
       <body className={vazir.className}>
-        <main>{children}</main>
+        <main>
+          {children}
+          <footer>
+            <div>{t.madeBy}</div>
+            <div>{t.forOrg}</div>
+            <div>
+              <a href="https://kibordevents.com" rel="noreferrer">
+                kibordevents.com
+              </a>
+              {' · '}
+              <a href="https://bardiamardan.xyz" rel="noreferrer">
+                bardiamardan.xyz
+              </a>
+            </div>
+          </footer>
+        </main>
       </body>
     </html>
   )

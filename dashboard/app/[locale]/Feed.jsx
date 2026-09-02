@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { signOut } from '../../lib/auth-client'
+import Tabs from './Tabs'
 
 function stamp(event, locale, fallback) {
   const seconds = event.epoch || event.receivedAt
@@ -13,7 +14,6 @@ function stamp(event, locale, fallback) {
     month: 'short',
     hour: '2-digit',
     minute: '2-digit',
-    second: '2-digit',
   })
 }
 
@@ -44,7 +44,7 @@ export default function Feed({ initial, locale, t, other }) {
         <div>
           <h1>{t.title}</h1>
           <p className="sub">
-            {events.length} {t.events} — {t.refreshing}
+            {events.length} {t.events} · {t.refreshing}
           </p>
         </div>
         <div className="actions">
@@ -55,18 +55,21 @@ export default function Feed({ initial, locale, t, other }) {
         </div>
       </header>
 
+      <Tabs locale={locale} t={t} active="events" />
+
       {events.length === 0 ? (
         <p className="empty">{t.empty}</p>
       ) : (
-        <div className="stack">
+        <div className="card">
           {events.map((e) => (
-            <div key={e.id} className={`row ${e.silent ? 'silent' : 'loud'}`}>
-              <span className="time">{stamp(e, locale, t.unknown)}</span>
-              <span className="kind">{e.kind}</span>
-              <span className="event">{e.event}</span>
-              <span className={`tag ${e.silent ? 'silent' : 'loud'}`}>
-                {e.silent ? t.silent : t.loud}
+            <div className="row" key={e.id}>
+              <span className={`dot ${e.silent ? 'silent' : ''}`} />
+              <span className="what">
+                <span className="event">{e.event}</span>
+                <br />
+                <span className="kind">{e.kind}</span>
               </span>
+              <span className="time">{stamp(e, locale, t.unknown)}</span>
             </div>
           ))}
         </div>

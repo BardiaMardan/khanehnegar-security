@@ -50,11 +50,11 @@ export default function LoginForm({ locale, t, other }) {
           />
         </div>
         <div className="err">{error}</div>
-        <button type="submit" disabled={busy}>
+        <button className="primary" type="submit" disabled={busy}>
           {busy ? t.signingIn : t.signIn}
         </button>
       </form>
-      <div className="actions" style={{ marginTop: 18 }}>
+      <div className="actions" style={{ marginTop: 18, justifyContent: 'center' }}>
         <Link className="btn" href={`/${other}/login`}>
           {t.lang}
         </Link>
