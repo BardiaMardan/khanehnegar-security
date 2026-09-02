@@ -1,3 +1,7 @@
+// =============================================================================
+//  store.cpp — the microSD card and the hub's only clock
+// =============================================================================
+
 #include "store.h"
 #include "config.h"
 #include "secrets.h"
@@ -8,10 +12,12 @@
 
 namespace Store {
 
+// ========== [Paths] ==========
 #define CFG_PATH    "/khaneh/config.ini"
 #define ACCESS_PATH "/khaneh/access.ini"
 #define EVENT_PATH  "/khaneh/events.csv"
 
+// ========== [Module state] ==========
 static bool      g_ready = false;
 static SPIClass  sdSpi(HSPI);
 static HubConfig g_cfg;
@@ -19,10 +25,10 @@ static HubConfig g_cfg;
 static int16_t  g_offsetMin = 0;
 static bool     g_haveTime  = false;
 
-
 bool ready() { return g_ready; }
 const HubConfig &config() { return g_cfg; }
 
+// ========== [ini parsing] ==========
 static void trim(String &s) {
   s.replace("\r", "");
   s.trim();
@@ -59,6 +65,7 @@ static void readIni(const char *path, void (*sink)(const String &, const String 
   f.close();
 }
 
+// ========== [Bring-up] ==========
 bool begin() {
   g_cfg.siteName  = "khanehnegar";
   g_cfg.timezone  = "Asia/Tehran";
@@ -99,6 +106,7 @@ bool begin() {
   return true;
 }
 
+// ========== [The roster mirror] ==========
 String readAccess() {
   if (!g_ready) return String("");
   File f = SD.open(ACCESS_PATH, FILE_READ);
@@ -119,6 +127,7 @@ bool writeAccess(const String &body) {
   return true;
 }
 
+// ========== [The event archive] ==========
 void appendEvent(uint32_t ep, const char *kind, const char *event,
                  uint16_t value, bool silent) {
   if (!g_ready) return;
@@ -128,6 +137,7 @@ void appendEvent(uint32_t ep, const char *kind, const char *event,
   f.close();
 }
 
+// ========== [The clock] ==========
 void setEpoch(uint32_t ep) {
   struct timeval tv;
   tv.tv_sec  = (time_t)ep;
@@ -149,6 +159,7 @@ uint32_t localEpoch() {
   return e + (int32_t)g_offsetMin * 60;
 }
 
+// ========== [Formatting for the panel] ==========
 static bool localParts(struct tm &out) {
   const uint32_t local = localEpoch();
   if (!local) return false;

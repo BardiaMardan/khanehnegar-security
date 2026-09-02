@@ -1,8 +1,13 @@
+// =============================================================================
+//  io.cpp — the buzzer: patterns, and the siren
+// =============================================================================
+
 #include "io.h"
 #include "config.h"
 
 namespace IO {
 
+// ========== [Module state] ==========
 static uint8_t  q_count   = 0;
 static uint16_t q_on      = 0;
 static uint16_t q_off     = 0;
@@ -17,6 +22,7 @@ void begin() {
   digitalWrite(PIN_BUZZER, LOW);
 }
 
+// ========== [Patterns and what they mean] ==========
 void beep(uint8_t count, uint16_t onMs, uint16_t offMs) {
   if (siren) return;
   q_count = count;
@@ -31,6 +37,7 @@ void reject()   { beep(3, 70, 70); }
 void chime()    { beep(2, 50, 60); }
 void tickTock() { beep(1, 25, 0); }
 
+// ========== [Siren] ==========
 void sirenOn() {
   siren = true;
   sirenNext = millis();
@@ -45,6 +52,7 @@ void sirenOff() {
 
 bool sirenActive() { return siren; }
 
+// ========== [The state machine] ==========
 void tick() {
   const uint32_t now = millis();
 

@@ -1,9 +1,14 @@
+// =============================================================================
+//  climate.cpp — the DHT11 on a single wire
+// =============================================================================
+
 #include "climate.h"
 #include "config.h"
 #include <DHT.h>
 
 namespace Climate {
 
+// ========== [Module state] ==========
 static DHT      dht(PIN_DHT, DHT11);
 static float    g_t     = 0;
 static float    g_h     = 0;
@@ -15,6 +20,7 @@ void begin() {
   g_next = millis() + 2000;
 }
 
+// ========== [The read, and why it cannot be faster] ==========
 void tick() {
   const uint32_t now = millis();
   if (now < g_next) return;

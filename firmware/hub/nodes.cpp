@@ -1,8 +1,13 @@
+// =============================================================================
+//  nodes.cpp — the roster: which modules the hub has adopted, and which are still alive
+// =============================================================================
+
 #include "nodes.h"
 #include <Preferences.h>
 
 namespace Nodes {
 
+// ========== [The roster, and what it is not] ==========
 static NodeRec     g[SECMESH_MAX_NODES];
 static bool        g_pairing = false;
 static uint32_t    g_pairingOpenedAt = 0;
@@ -21,6 +26,7 @@ NodeRec *find(const uint8_t mac[6]) {
   return nullptr;
 }
 
+// ========== [Adoption] ==========
 NodeRec *adopt(const uint8_t mac[6], uint8_t kind, bool encrypted, bool &fresh) {
   NodeRec *n = find(mac);
   fresh = false;
@@ -45,6 +51,9 @@ NodeRec *adopt(const uint8_t mac[6], uint8_t kind, bool encrypted, bool &fresh) 
   return n;
 }
 
+// ========== [Replay protection] ==========
+// Strictly greater rejects replays; a big backwards jump is a node reboot, and rejecting
+// that permanently bricked any node that lost power.
 bool acceptCounter(NodeRec *n, uint32_t counter) {
   if (counter > n->lastCounter) {
     n->lastCounter = counter;
@@ -57,6 +66,7 @@ bool acceptCounter(NodeRec *n, uint32_t counter) {
   return false;
 }
 
+// ========== [Liveness] ==========
 void touchSeen(NodeRec *n, const SecFrame &f) {
   n->lastSeen  = millis();
   n->supplyMv  = f.supplyMv;
@@ -77,6 +87,7 @@ void tick() {
   if (g_pairing && now - g_pairingOpenedAt > 120000UL) g_pairing = false;
 }
 
+// ========== [Queries for the UI] ==========
 int capacity() { return SECMESH_MAX_NODES; }
 NodeRec *at(int i) { return (i >= 0 && i < SECMESH_MAX_NODES) ? &g[i] : nullptr; }
 
@@ -92,6 +103,7 @@ int deadCount() {
   return c;
 }
 
+// ========== [Pairing window] ==========
 void setPairingMode(bool on) {
   g_pairing = on;
   g_pairingOpenedAt = millis();
@@ -99,6 +111,7 @@ void setPairingMode(bool on) {
 
 bool pairingMode() { return g_pairing; }
 
+// ========== [Persistence] ==========
 void save() {
   prefs.begin(NVS_NAMESPACE, false);
   for (int i = 0; i < SECMESH_MAX_NODES; i++) {

@@ -1,3 +1,7 @@
+// =============================================================================
+//  ui.cpp — framework: paint scheduling, touch routing, standby, overlays
+// =============================================================================
+
 #include "internal.h"
 #include "../../state.h"
 #include "../../access.h"
@@ -6,6 +10,7 @@
 
 namespace UI {
 
+// ========== [State the framework owns] ==========
 TFT_eSPI tft;
 Page     g_page     = PAGE_STATUS;
 bool     g_full     = true;
@@ -25,6 +30,7 @@ static uint32_t g_lastActivity = 0;
 static uint8_t  g_bootStep    = 0;
 static bool     g_booting     = true;
 
+// ========== [Primitives] ==========
 bool hit(const Btn &b, int16_t x, int16_t y) {
   return x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h;
 }
@@ -76,6 +82,7 @@ uint16_t modeColour(uint8_t m) {
   }
 }
 
+// ========== [Boot splash] ==========
 static void splashFrame() {
   tft.fillScreen(COL_BG);
   tft.setTextPadding(0);
@@ -107,6 +114,7 @@ void boot(const char *step) {
   tft.setTextPadding(0);
 }
 
+// ========== [Touch calibration] ==========
 static void calibrate() {
   Preferences p;
   uint16_t cal[5] = {0};
@@ -136,6 +144,7 @@ static void calibrate() {
   tft.setTouch(cal);
 }
 
+// ========== [Lifecycle] ==========
 void begin() {
   tft.init();
   tft.setRotation(UI_ROTATION);
@@ -157,6 +166,8 @@ void ready() {
 
 void invalidate() { g_dirty = true; }
 
+// wake() is not invalidate(): node heartbeats arrive every 10 s and must only repaint,
+// never reset the standby timer, or the screen would never dim.
 void wake() {
   g_lastActivity = millis();
   g_dirty = true;
@@ -174,6 +185,7 @@ static bool standbyAllowed() {
 
 Page page() { return g_page; }
 
+// ========== [Navigation] ==========
 void go(Page p) {
   if (g_page != p) {
     g_page = p;
@@ -202,6 +214,7 @@ static bool navTouch(int16_t x, int16_t y) {
   return true;
 }
 
+// ========== [Overlays] ==========
 static void drawToast() {
   const uint8_t k = Sec::toastKind();
   const uint16_t c = (k == 1) ? COL_OK : (k == 2) ? COL_WARN : COL_BAD;
@@ -256,10 +269,12 @@ static void drawPopup() {
   drawBtn(kDeny, COL_BAD, COL_BG);
 }
 
+// ========== [Frame] ==========
 void tick() {
   if (g_booting) return;
   const uint32_t now = millis();
 
+  // ========== [Touch routing] ==========
   if (now - g_lastTouch >= 40) {
     g_lastTouch = now;
     uint16_t rx, ry;
@@ -292,6 +307,7 @@ void tick() {
     }
   }
 
+  // ========== [Standby] ==========
   const bool wantStandby = standbyAllowed() && (now - g_lastActivity > STANDBY_AFTER_MS);
 
   if (wantStandby != g_standby) {

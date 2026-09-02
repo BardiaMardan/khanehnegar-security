@@ -1,3 +1,7 @@
+// =============================================================================
+//  pages.cpp — the pixels: five screens, one keypad, and their touch targets
+// =============================================================================
+
 #include "internal.h"
 #include "../../state.h"
 #include "../../nodes.h"
@@ -13,6 +17,7 @@
 
 namespace UI {
 
+// ========== [Keypad grid] ==========
 static const char *kKeys[12] = {"1","2","3","4","5","6","7","8","9","CLR","0","OK"};
 
 Btn keyAt(int i) {
@@ -40,6 +45,7 @@ void drawEntry(const char *prompt, uint16_t width) {
   tft.setTextPadding(0);
 }
 
+// ========== [Status page] ==========
 static String stamp(const LogEntry &e) {
   if (e.at) return String((millis() - e.at) / 1000) + "s";
   return Store::hhmm(e.epoch);
@@ -130,6 +136,7 @@ bool statusTouch(int16_t x, int16_t y) {
   return true;
 }
 
+// ========== [Keypad page and the change-PIN state machine] ==========
 enum KeyMode : uint8_t { KM_UNLOCK = 0, KM_CUR, KM_NEW, KM_CONFIRM };
 
 static KeyMode g_km = KM_UNLOCK;
@@ -235,6 +242,7 @@ bool keypadTouch(int16_t x, int16_t y) {
   return true;
 }
 
+// ========== [Log page] ==========
 void drawLog(bool full) {
   if (full) {
     tft.fillRect(0, 0, SCR_W, NAV_TOP, COL_BG);
@@ -258,6 +266,7 @@ void drawLog(bool full) {
   }
 }
 
+// ========== [Manage page] ==========
 static const Btn kPair   = {6, 196, 110, 34, "PAIR MODE"};
 static const Btn kForget = {124, 196, 110, 34, "FORGET NODES"};
 static const Btn kEnroll = {6, 234, 110, 34, "ADD FINGER"};
@@ -366,6 +375,7 @@ bool manageTouch(int16_t x, int16_t y) {
   return false;
 }
 
+// ========== [Standby] ==========
 void drawStandby(bool full) {
   const uint8_t  m = Sec::displayMode();
   const uint16_t c = modeColour(m);

@@ -1,3 +1,7 @@
+// =============================================================================
+//  nodes.h — the roster of adopted modules, as seen from outside
+// =============================================================================
+
 #pragma once
 #include <Arduino.h>
 #include <SecMesh.h>

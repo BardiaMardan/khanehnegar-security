@@ -1,3 +1,7 @@
+// =============================================================================
+//  store.h — the SD card and the wall clock, as seen from outside
+// =============================================================================
+
 #pragma once
 #include <Arduino.h>
 
@@ -15,12 +19,14 @@ bool ready();
 bool begin();
 const HubConfig &config();
 
+// ========== [The roster mirror] ==========
 String readAccess();
 bool   writeAccess(const String &body);
 
 void appendEvent(uint32_t epoch, const char *kind, const char *event,
                  uint16_t value, bool silent);
 
+// ========== [The clock] ==========
 void setEpoch(uint32_t epoch);
 void setOffsetMinutes(int16_t minutes);
 uint32_t epoch();

@@ -1,3 +1,7 @@
+// =============================================================================
+//  hub.ino — the sketch: boot order, the main loop, and the ESP-NOW handoff
+// =============================================================================
+
 #include <WiFi.h>
 #include <SecMesh.h>
 #include "config.h"
@@ -13,6 +17,7 @@
 #include "climate.h"
 #include "net.h"
 
+// ========== [ESP-NOW receive queue] ==========
 #define RXQ_LEN 12
 struct RxItem { uint8_t mac[6]; SecFrame f; };
 static RxItem  rxq[RXQ_LEN];
@@ -31,6 +36,7 @@ static void onMeshRx(const uint8_t mac[6], const SecFrame &f) {
   rxHead = next;
 }
 
+// ========== [Frame handling] ==========
 static bool knownKind(uint8_t k) {
   return k == KIND_DOOR || k == KIND_WINDOW || k == KIND_LASER || k == KIND_PANEL;
 }
@@ -64,6 +70,7 @@ static void handleFrame(const uint8_t mac[6], const SecFrame &f) {
   UI::invalidate();
 }
 
+// ========== [Boot] ==========
 void setup() {
   Serial.begin(115200);
   delay(200);
@@ -111,6 +118,7 @@ void setup() {
   UI::ready();
 }
 
+// ========== [Fingerprint results] ==========
 static void handleFingerprint() {
   switch (FP::take()) {
     case FP::RES_MATCH:
@@ -143,6 +151,7 @@ static void handleFingerprint() {
   }
 }
 
+// ========== [Main loop] ==========
 void loop() {
   IO::tick();
   FP::tick();

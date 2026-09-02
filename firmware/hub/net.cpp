@@ -1,3 +1,7 @@
+// =============================================================================
+//  net.cpp — WiFi, time sync, alerts, command polling
+// =============================================================================
+
 #include "net.h"
 #include "store.h"
 #include "state.h"
@@ -9,6 +13,7 @@
 
 namespace Net {
 
+// ========== [Module state] ==========
 static bool     g_online   = false;
 static uint32_t g_nextTry  = 0;
 static uint32_t g_nextSync = 0;
@@ -19,6 +24,7 @@ static bool     g_rosterDue = true;
 bool online()  { return g_online; }
 int  channel() { return WiFi.channel(); }
 
+// ========== [Bring-up] ==========
 void begin() {
   const HubConfig &c = Store::config();
   if (c.wifiSsid.length() == 0) return;
@@ -27,6 +33,7 @@ void begin() {
   g_nextTry = millis() + 8000;
 }
 
+// ========== [The one place a request is opened] ==========
 static bool openTo(HTTPClient &http, const char *path) {
   const HubConfig &c = Store::config();
   if (!g_online || c.serverUrl.length() == 0) return false;
@@ -36,6 +43,8 @@ static bool openTo(HTTPClient &http, const char *path) {
   http.addHeader("X-Api-Key", c.apiKey);
   return true;
 }
+
+// ========== [JSON, scanned rather than parsed] ==========
 
 static long findNumber(const String &body, const char *key, int from = 0) {
   const int k = body.indexOf(key, from);
@@ -76,6 +85,7 @@ static bool flagTrue(const String &body, const char *key) {
   return body.indexOf(needle) >= 0;
 }
 
+// ========== [Time sync] ==========
 static void syncTime() {
   HTTPClient http;
   if (!openTo(http, "/api/time")) return;
@@ -90,6 +100,7 @@ static void syncTime() {
   http.end();
 }
 
+// ========== [Outbound: alerts] ==========
 void alert(bool silent, const char *kind, const char *event, uint16_t value) {
   const HubConfig &c = Store::config();
   HTTPClient http;
@@ -114,6 +125,7 @@ void alert(bool silent, const char *kind, const char *event, uint16_t value) {
   http.end();
 }
 
+// ========== [Outbound: the answer to an approval] ==========
 void decide(uint32_t id, bool allowed) {
   HTTPClient http;
   if (!openTo(http, "/api/command")) return;
@@ -127,6 +139,7 @@ void decide(uint32_t id, bool allowed) {
   http.end();
 }
 
+// ========== [Outbound: the fingerprint roster] ==========
 static void sendRoster();
 
 void publishRoster() {
@@ -154,6 +167,7 @@ static void sendRoster() {
   http.end();
 }
 
+// ========== [Inbound: an approval request] ==========
 static void takeApproval(const String &body) {
   const int k = body.indexOf("\"approve\"");
   if (k < 0) return;
@@ -167,6 +181,7 @@ static void takeApproval(const String &body) {
                   (uint16_t)(arg < 0 ? 0 : arg), text.c_str());
 }
 
+// ========== [Inbound: fingerprint renames] ==========
 static void takeRenames(const String &body) {
   const int arr = body.indexOf("\"renames\":[");
   if (arr < 0) return;
@@ -188,6 +203,7 @@ static void takeRenames(const String &body) {
   }
 }
 
+// ========== [Command polling] ==========
 static void pollCommands() {
   HTTPClient http;
   if (!openTo(http, "/api/command")) return;
@@ -204,6 +220,7 @@ static void pollCommands() {
   http.end();
 }
 
+// ========== [Scheduler] ==========
 void tick() {
   if (!g_started) return;
   const uint32_t now = millis();

@@ -1,3 +1,7 @@
+// =============================================================================
+//  fp.cpp — the R308 optical fingerprint sensor on UART2
+// =============================================================================
+
 #include "fp.h"
 #include "config.h"
 #include "fingers.h"
@@ -5,9 +9,11 @@
 
 namespace FP {
 
+// ========== [The link] ==========
 static HardwareSerial      port(2);
 static Adafruit_Fingerprint sensor(&port);
 
+// ========== [Module state] ==========
 static bool     g_present   = false;
 static int      g_count     = 0;
 static Result   g_result    = RES_NONE;
@@ -21,6 +27,7 @@ static uint16_t g_lastId    = 0;
 static uint32_t g_guard     = 0;
 static uint32_t g_lastPoll  = 0;
 
+// ========== [Bring-up] ==========
 void begin() {
 #if FP_TOUCH_GATE
   pinMode(PIN_FP_TOUCH, INPUT);
@@ -46,6 +53,7 @@ void begin() {
 bool present() { return g_present; }
 int  templateCount() { return g_count; }
 
+// ========== [The one-shot result] ==========
 Result take() {
   const Result r = g_result;
   g_result = RES_NONE;
@@ -55,6 +63,7 @@ Result take() {
 uint16_t matchedId()  { return g_matchedId; }
 uint16_t confidence() { return g_score; }
 
+// ========== [Enrolment] ==========
 static uint16_t nextFreeId() { return Fingers::nextFreeId(); }
 
 void startEnroll() {
@@ -75,6 +84,7 @@ bool     enrolling()      { return g_enroll; }
 uint8_t  enrollStep()     { return g_step; }
 uint16_t lastEnrolledId() { return g_lastId; }
 
+// ========== [Template database] ==========
 bool erase(uint16_t id) {
   if (!g_present) return false;
   const bool ok = sensor.deleteModel(id) == FINGERPRINT_OK;
@@ -102,6 +112,7 @@ int adoptExisting() {
   return found;
 }
 
+// ========== [Enrolment state machine] ==========
 static void tickEnroll() {
   const uint8_t img = sensor.getImage();
 
@@ -142,6 +153,7 @@ static void tickEnroll() {
   }
 }
 
+// ========== [The poll] ==========
 void tick() {
   if (!g_present) return;
 
