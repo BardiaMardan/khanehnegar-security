@@ -5,12 +5,16 @@
 #include <SecMesh.h>
 
 // ========== [Pins] ==========
-// LDR must sit on ADC1. ADC2 stops answering the moment WiFi or ESP-NOW is running, and
-// GPIO36 is ADC1_CH0. Input-only is no problem for an analog divider.
-#define PIN_LDR         36
-#define PIN_LASER       26
+// Every signal sits on one side of the header — 16 / SVN / 5 / 4 / 2 / 0 / 14 / 12 / 13 / 15
+// / RX / TX — so the whole node is one ribbon to one row. Power is the exception: 3V3 and GND
+// only exist on the other side.
+//
+// SVN is GPIO39, an ADC1 channel. The LDR has to be on ADC1: ADC2 stops answering the moment
+// WiFi or ESP-NOW is running. Input-only with no pull-up is fine for a divider.
+#define PIN_LDR         39
+#define PIN_LASER       16
 #define PIN_CASE         4
-#define PIN_LED         25
+#define PIN_LED         13
 #define PIN_UNCLAIM      0
 
 #define ENABLE_CASE_TAMPER 1
