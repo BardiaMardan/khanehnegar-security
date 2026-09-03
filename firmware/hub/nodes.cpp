@@ -46,11 +46,14 @@ NodeRec *adopt(const uint8_t mac[6], uint8_t kind, bool encrypted, bool &fresh) 
     n->lastSeen = millis();
     fresh = true;
   }
+  const bool modeChanged = (!fresh && n->encrypted != encrypted);
   n->kind        = kind;
   n->encrypted   = encrypted;
   n->lastCounter = 0;
   SecMesh.addPeer(mac, encrypted);
-  if (fresh) save();
+  // Persist a change of link mode too, or a node that switched to plaintext would be
+  // re-added encrypted on the next boot and go mute again.
+  if (fresh || modeChanged) save();
   return n;
 }
 
