@@ -143,6 +143,9 @@ void save() {
   prefs.end();
 }
 
+// A restored node starts dead, not alive. Flash only remembers that we adopted it; whether it
+// is powered right now is unknowable until it speaks. Loading them as alive made the panel
+// claim "2/2 online" at boot and then count down as each one failed to appear.
 void load() {
   prefs.begin(NVS_NAMESPACE, true);
   for (int i = 0; i < SECMESH_MAX_NODES; i++) {
@@ -154,7 +157,8 @@ void load() {
       g[i].kind      = blob[6];
       g[i].encrypted = blob[7] != 0;
       g[i].used      = true;
-      g[i].dead      = false;
+      g[i].dead      = true;
+      g[i].lastSeen  = millis();
       SecMesh.addPeer(g[i].mac, g[i].encrypted);
     }
   }

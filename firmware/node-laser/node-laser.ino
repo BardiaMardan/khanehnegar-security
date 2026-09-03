@@ -78,7 +78,11 @@ void setup() {
   delay(200);
 
   pinMode(PIN_LED, OUTPUT);
+  showLed(true);
+  delay(500);
   showLed(false);
+  delay(150);
+  DBG("LED self-test done on GPIO %d", PIN_LED);
   pinMode(PIN_LASER, OUTPUT);
   digitalWrite(PIN_LASER, HIGH);
 
@@ -119,8 +123,12 @@ void setup() {
 void loop() {
   SecMesh.tick();
 
+  // Slow blink = hunting for a hub. Solid = claimed and the beam is intact. Fast blink = beam
+  // broken. Solid-on for the healthy case matters: an unlit LED should mean a dead node, not
+  // a working one.
   if (!SecMesh.hasHub()) showLed((millis() / 400) % 2);
-  else                   showLed(tripped);
+  else if (tripped)      showLed((millis() / 100) % 2);
+  else                   showLed(true);
 
   const uint32_t now = millis();
   if (now - lastScan < SAMPLE_MS) return;

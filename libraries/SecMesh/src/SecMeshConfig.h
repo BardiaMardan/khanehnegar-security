@@ -40,6 +40,6 @@
 #define SECMESH_ALARM_GAP_MS   40
 
 // ========== [Tamper switch] ==========
-// An enclosure switch on a jumper wire is an antenna, and the internal pull-up is only about
-// 45k. Without this the pin chattered and every edge sent a three-frame urgent burst.
-#define SECMESH_TAMPER_DEBOUNCE_MS 250UL
+// 0 = report the edge on the next tick. Raise it only if the enclosure switch genuinely
+// chatters; at 250 ms a real contact of ten milliseconds never registered at all.
+#define SECMESH_TAMPER_DEBOUNCE_MS 0UL

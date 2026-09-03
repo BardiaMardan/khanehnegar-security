@@ -46,11 +46,7 @@ static void handleFrame(const uint8_t mac[6], const SecFrame &f) {
     if (!knownKind(f.kind)) return;
     bool fresh = false;
     NodeRec *n = Nodes::adopt(mac, f.kind, f.arg == 1, fresh);
-    if (!n) {
-      DBG("pair request from %s ignored, pairing closed",
-          SecMeshClass::macToStr(mac).c_str());
-      return;
-    }
+    if (!n) return;
 
     const uint32_t now = millis();
     if (fresh || now - lastAccept > 2000) {
@@ -68,10 +64,7 @@ static void handleFrame(const uint8_t mac[6], const SecFrame &f) {
   }
 
   NodeRec *n = Nodes::find(mac);
-  if (!n) {
-    DBG("frame from unknown %s code=%u", SecMeshClass::macToStr(mac).c_str(), f.code);
-    return;
-  }
+  if (!n) return;
 
   // A node announces EV_BOOT after a restart, when its own counter is back at 1. Clearing
   // our stored value here is what lets it rejoin immediately instead of having every frame
