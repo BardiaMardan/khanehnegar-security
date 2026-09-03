@@ -12,6 +12,16 @@
 #define SECMESH_PMK         "KhanehNegarPMK01"
 #define SECMESH_LMK         "KhanehNegarLMK01"
 
+// ESP8266 ESP-NOW does not interoperate reliably with the ESP32's encrypted unicast: the
+// broadcast pairing frames get through and every encrypted unicast is dropped, which left an
+// ESP8266 node claimed but structurally mute. Those nodes use plaintext unicast. The link is
+// still counter-protected and MAC-filtered, but it is readable off the air — see ADR-002.
+#if defined(ESP8266)
+  #define SECMESH_WANT_ENCRYPTION 0
+#else
+  #define SECMESH_WANT_ENCRYPTION 1
+#endif
+
 // ========== [Liveness timing] ==========
 // Dead at two and a half missed heartbeats. This is a security system: a node going quiet
 // may mean it was destroyed, so the detection window is short at the cost of more traffic.

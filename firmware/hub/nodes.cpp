@@ -27,6 +27,10 @@ NodeRec *find(const uint8_t mac[6]) {
 }
 
 // ========== [Adoption] ==========
+// A pair request is not evidence of life. Reviving lastSeen and clearing `dead` here meant a
+// node that could broadcast but never deliver a real frame was resurrected every time it
+// asked, died again 13 s later, and raised a lost-module alarm on every cycle. Liveness is
+// touchSeen's job and only an accepted data frame gets there.
 NodeRec *adopt(const uint8_t mac[6], uint8_t kind, bool encrypted, bool &fresh) {
   NodeRec *n = find(mac);
   fresh = false;
@@ -38,14 +42,13 @@ NodeRec *adopt(const uint8_t mac[6], uint8_t kind, bool encrypted, bool &fresh) 
     if (!n) return nullptr;
     memset(n, 0, sizeof(NodeRec));
     memcpy(n->mac, mac, 6);
-    n->used = true;
+    n->used     = true;
+    n->lastSeen = millis();
     fresh = true;
   }
   n->kind        = kind;
   n->encrypted   = encrypted;
-  n->lastSeen    = millis();
   n->lastCounter = 0;
-  n->dead        = false;
   SecMesh.addPeer(mac, encrypted);
   if (fresh) save();
   return n;

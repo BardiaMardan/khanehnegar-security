@@ -20,9 +20,13 @@
 bool SecMeshClass::addPeer(const uint8_t mac[6], bool encrypted) {
 #if defined(ESP8266)
   if (esp_now_is_peer_exist((uint8_t *)mac)) esp_now_del_peer((uint8_t *)mac);
-  return esp_now_add_peer((uint8_t *)mac, ESP_NOW_ROLE_COMBO, 0,
-                          encrypted ? (uint8_t *)SECMESH_LMK : NULL,
-                          encrypted ? 16 : 0) == 0;
+  // The ESP8266 SDK wants a real channel here; 0 means "current channel" only on ESP32.
+  const int ok = esp_now_add_peer((uint8_t *)mac, ESP_NOW_ROLE_COMBO, _channel,
+                                  encrypted ? (uint8_t *)SECMESH_LMK : NULL,
+                                  encrypted ? 16 : 0);
+  DBG("addPeer %s enc=%d ch=%u -> %d", macToStr(mac).c_str(), encrypted ? 1 : 0,
+      _channel, ok);
+  return ok == 0;
 #else
   esp_now_peer_info_t p = {};
   memcpy(p.peer_addr, mac, 6);
@@ -31,7 +35,9 @@ bool SecMeshClass::addPeer(const uint8_t mac[6], bool encrypted) {
   p.encrypt = encrypted;
   if (encrypted) memcpy(p.lmk, SECMESH_LMK, 16);
   if (esp_now_is_peer_exist(mac)) esp_now_del_peer(mac);
-  return esp_now_add_peer(&p) == ESP_OK;
+  const esp_err_t ok = esp_now_add_peer(&p);
+  DBG("addPeer %s enc=%d -> %d", macToStr(mac).c_str(), encrypted ? 1 : 0, (int)ok);
+  return ok == ESP_OK;
 #endif
 }
 
@@ -78,7 +84,7 @@ void SecMeshClass::loadClaim() {
   memcpy(_hubMac, mac, 6);
   _hasHub = true;
   _flags |= SF_PAIRED;
-  addPeer(_hubMac, true);
+  addPeer(_hubMac, SECMESH_WANT_ENCRYPTION);
 }
 
 void SecMeshClass::clearClaim() {
@@ -95,8 +101,9 @@ void SecMeshClass::setHub(const uint8_t mac[6]) {
   memcpy(_hubMac, mac, 6);
   _hasHub = true;
   _flags |= SF_PAIRED;
-  addPeer(_hubMac, true);
+  addPeer(_hubMac, SECMESH_WANT_ENCRYPTION);
   writeClaim(mac, true);
+  DBG("claimed hub %s", macToStr(mac).c_str());
 }
 
 // Broadcast, not unicast: ESP-NOW drops encrypted frames from a peer you have not added,
@@ -121,7 +128,7 @@ void SecMeshClass::forgetHub() {
 }
 
 void SecMeshClass::requestPairing() {
-  broadcast(EV_PAIR_REQUEST, 1, 0);
+  broadcast(EV_PAIR_REQUEST, SECMESH_WANT_ENCRYPTION, 0);
 }
 
 // ========== [Channel control] ==========
