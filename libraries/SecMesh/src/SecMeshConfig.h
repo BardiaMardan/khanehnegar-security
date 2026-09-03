@@ -38,3 +38,8 @@
 // ========== [Alarm burst] ==========
 #define SECMESH_ALARM_REPEAT   3
 #define SECMESH_ALARM_GAP_MS   40
+
+// ========== [Tamper switch] ==========
+// An enclosure switch on a jumper wire is an antenna, and the internal pull-up is only about
+// 45k. Without this the pin chattered and every edge sent a three-frame urgent burst.
+#define SECMESH_TAMPER_DEBOUNCE_MS 250UL

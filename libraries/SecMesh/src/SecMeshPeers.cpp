@@ -149,7 +149,8 @@ void SecMeshClass::setTamperPin(int pin, bool openIsHigh) {
   _tamperPin = pin;
   _tamperActiveHigh = openIsHigh;
   pinMode(pin, INPUT_PULLUP);
-  _tamperLast = (digitalRead(pin) == (openIsHigh ? HIGH : LOW));
+  _tamperLast = _tamperRaw = (digitalRead(pin) == (openIsHigh ? HIGH : LOW));
+  _tamperEdge = millis();
   if (_tamperLast) _flags |= SF_TAMPER;
 }
 
@@ -157,13 +158,20 @@ void SecMeshClass::setTamperPin(int pin, bool openIsHigh) {
 void SecMeshClass::tick() {
   const uint32_t now = millis();
 
+  // Debounced, because the raw pin chattered: an unwired or long-jumpered switch against a
+  // ~45k internal pull-up crosses the logic threshold on noise alone, and every edge used to
+  // fire a three-frame urgent burst plus a journal entry at the hub.
   if (_tamperPin >= 0) {
-    const bool open = (digitalRead(_tamperPin) == (_tamperActiveHigh ? HIGH : LOW));
-    if (open != _tamperLast) {
-      _tamperLast = open;
-      if (open) _flags |= SF_TAMPER;
-      else      _flags &= ~SF_TAMPER;
-      sendUrgent(open ? EV_TAMPER_OPEN : EV_TAMPER_CLOSED);
+    const bool raw = (digitalRead(_tamperPin) == (_tamperActiveHigh ? HIGH : LOW));
+    if (raw != _tamperRaw) {
+      _tamperRaw  = raw;
+      _tamperEdge = now;
+    } else if (raw != _tamperLast && now - _tamperEdge > SECMESH_TAMPER_DEBOUNCE_MS) {
+      _tamperLast = raw;
+      if (raw) _flags |= SF_TAMPER;
+      else     _flags &= ~SF_TAMPER;
+      DBG("tamper pin %d -> %s", _tamperPin, raw ? "OPEN" : "closed");
+      sendUrgent(raw ? EV_TAMPER_OPEN : EV_TAMPER_CLOSED);
     }
   }
 

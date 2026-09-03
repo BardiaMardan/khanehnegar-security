@@ -93,6 +93,8 @@ class SecMeshClass {
   int      _tamperPin        = -1;
   bool     _tamperActiveHigh = true;
   bool     _tamperLast       = false;
+  bool     _tamperRaw        = false;
+  uint32_t _tamperEdge       = 0;
   uint32_t _lastHeartbeat    = 0;
   uint32_t _lastPairTry      = 0;
   uint8_t  _hopChannel       = 1;

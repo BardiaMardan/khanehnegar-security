@@ -1,16 +1,26 @@
+// =============================================================================
+//  node-laser.ino — strobed laser tripwire on an ESP32 (LilyGO T-Display)
+// =============================================================================
+
 #include <SecMesh.h>
 
-#define PIN_LDR         A0
-#define PIN_LASER       14
-#define PIN_CASE        12
-#define PIN_LED          2
+// ========== [Pins] ==========
+// LDR must sit on ADC1. ADC2 stops answering the moment WiFi or ESP-NOW is running, and
+// GPIO36 is ADC1_CH0. Input-only is no problem for an analog divider.
+#define PIN_LDR         36
+#define PIN_LASER       26
+#define PIN_CASE         4
+#define PIN_LED         25
 #define PIN_UNCLAIM      0
 
 #define ENABLE_CASE_TAMPER 1
 
+// ========== [Detection tuning] ==========
+// A CdS photoresistor needs tens of milliseconds to respond, so each half of the strobe
+// settles before it is read. One scan is 30 ms, three confirm a break: ~180 ms to detect.
 #define SAMPLE_MS         60UL
 #define SETTLE_MS         15UL
-#define MIN_CONTRAST       80
+#define MIN_CONTRAST      300
 #define BREAK_CONFIRM       3
 #define CLEAR_CONFIRM       5
 
@@ -21,8 +31,9 @@ static uint8_t  clears   = 0;
 static bool     tripped  = false;
 static int      baseline = 0;
 
-static void showLed(bool on) { digitalWrite(PIN_LED, on ? LOW : HIGH); }
+static void showLed(bool on) { digitalWrite(PIN_LED, on ? HIGH : LOW); }
 
+// ========== [Downlink] ==========
 static void onRx(const uint8_t mac[6], const SecFrame &f) {
   switch (f.code) {
     case CMD_PAIR_ACCEPT:
@@ -32,8 +43,6 @@ static void onRx(const uint8_t mac[6], const SecFrame &f) {
       }
       break;
     case CMD_STATE:
-      hubMode = f.arg;
-      break;
     case CMD_PING:
       hubMode = f.arg;
       break;
@@ -45,6 +54,9 @@ static void onRx(const uint8_t mac[6], const SecFrame &f) {
   }
 }
 
+// ========== [The strobe] ==========
+// Not "is it dark" but "is the beam there". Ambient light appears in both samples and
+// cancels, so a torch aimed at the sensor cannot mask a broken beam.
 static int contrast() {
   digitalWrite(PIN_LASER, LOW);
   delay(SETTLE_MS);
@@ -59,10 +71,15 @@ static int contrast() {
 
 void setup() {
   Serial.begin(115200);
+  delay(200);
+
   pinMode(PIN_LED, OUTPUT);
   showLed(false);
   pinMode(PIN_LASER, OUTPUT);
   digitalWrite(PIN_LASER, HIGH);
+
+  analogReadResolution(12);
+  analogSetPinAttenuation(PIN_LDR, ADC_11db);
 
   if (!SecMesh.begin(KIND_LASER, onRx)) {
     Serial.println("FATAL: ESP-NOW would not start");
@@ -98,8 +115,8 @@ void setup() {
 void loop() {
   SecMesh.tick();
 
-  if (!SecMesh.hasHub())   showLed((millis() / 400) % 2);
-  else                     showLed(tripped);
+  if (!SecMesh.hasHub()) showLed((millis() / 400) % 2);
+  else                   showLed(tripped);
 
   const uint32_t now = millis();
   if (now - lastScan < SAMPLE_MS) return;
@@ -114,14 +131,14 @@ void loop() {
     if (!tripped && breaks >= BREAK_CONFIRM) {
       tripped = true;
       SecMesh.sendUrgent(EV_LASER_CUT, 0, (uint16_t)(c < 0 ? 0 : c));
-      Serial.printf("beam cut, contrast %d\n", c);
+      DBG("beam cut, contrast %d of %d", c, baseline);
     }
   } else {
     breaks = 0;
     if (clears < 255) clears++;
     if (tripped && clears >= CLEAR_CONFIRM) {
       tripped = false;
-      Serial.println("beam restored");
+      DBG("beam restored, contrast %d", c);
     }
   }
 }
