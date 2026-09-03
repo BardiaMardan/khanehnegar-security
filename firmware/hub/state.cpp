@@ -415,6 +415,8 @@ void tick() {
   if (Nodes::justDied) {
     NodeRec *n = Nodes::justDied;
     Nodes::justDied = nullptr;
+    DBG("node lost kind=%s lastSeen=%lums ago lastEvent=%u",
+        secKindName(n->kind), (unsigned long)(millis() - n->lastSeen), n->lastEvent);
     raise(false, n->kind, EV_NODE_LOST, 0);
     say("module lost");
   }

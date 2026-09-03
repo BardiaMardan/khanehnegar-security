@@ -113,6 +113,9 @@ static void onRx(const uint8_t mac[6], const SecFrame &f) {
     case CMD_STATE:
       hubMode = f.arg;
       break;
+    case CMD_PING:
+      hubMode = f.arg;
+      break;
     case CMD_IDENTIFY:
       for (int i = 0; i < 6; i++) { digitalWrite(PIN_LED, i % 2); delay(120); }
       break;

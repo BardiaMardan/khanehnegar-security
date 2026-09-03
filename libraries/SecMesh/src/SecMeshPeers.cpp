@@ -176,14 +176,16 @@ void SecMeshClass::tick() {
   if (now - _lastHeartbeat > SECMESH_HEARTBEAT_MS) {
     _lastHeartbeat = now;
     send(EV_HEARTBEAT, 0, 0);
-    // Nothing heard back for a while: the hub may have moved channel, or our claim may be
-    // stale. Hop and re-announce ourselves rather than heartbeating into the void. _lastDown
-    // is zero until the first frame is accepted, so a node that has never been heard from
-    // starts hunting immediately after its first heartbeat.
-    if (now - (_lastDown ? _lastDown : _bootAt) > SECMESH_SILENT_MS) {
+    // The hub answers every heartbeat with CMD_PING, so _lastDown moving is proof the link
+    // works in both directions. Without that reply this check fired on every healthy node —
+    // nothing is sent downstream in steady state, so silence was permanent and the node
+    // hopped channel every 20 s, dropping a link that was fine.
+    const uint32_t quietSince = _lastDown ? _lastDown : _bootAt;
+    if (now - quietSince > SECMESH_SILENT_MS) {
       _hopChannel++;
       if (_hopChannel > 13) _hopChannel = 1;
       setChannel(_hopChannel);
+      DBG("node: silent %lums, hop to ch%u", (unsigned long)(now - quietSince), _hopChannel);
       send(EV_BOOT, 0, 0);
       requestPairing();
     }

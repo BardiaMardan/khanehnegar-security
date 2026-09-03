@@ -46,12 +46,18 @@ static void handleFrame(const uint8_t mac[6], const SecFrame &f) {
     if (!knownKind(f.kind)) return;
     bool fresh = false;
     NodeRec *n = Nodes::adopt(mac, f.kind, f.arg == 1, fresh);
-    if (!n) return;
+    if (!n) {
+      DBG("pair request from %s ignored, pairing closed",
+          SecMeshClass::macToStr(mac).c_str());
+      return;
+    }
 
     const uint32_t now = millis();
     if (fresh || now - lastAccept > 2000) {
       lastAccept = now;
       SecMesh.acceptPairing(mac, Sec::mode());
+      DBG("accept sent to %s (%s)", SecMeshClass::macToStr(mac).c_str(),
+          fresh ? "new" : "known");
     }
     if (fresh) {
       IO::beep(2, 60, 60);
@@ -62,17 +68,31 @@ static void handleFrame(const uint8_t mac[6], const SecFrame &f) {
   }
 
   NodeRec *n = Nodes::find(mac);
-  if (!n) return;
+  if (!n) {
+    DBG("frame from unknown %s code=%u", SecMeshClass::macToStr(mac).c_str(), f.code);
+    return;
+  }
 
   // A node announces EV_BOOT after a restart, when its own counter is back at 1. Clearing
   // our stored value here is what lets it rejoin immediately instead of having every frame
   // read as a replay.
   if (f.code == EV_BOOT) Nodes::resetCounter(n);
 
-  if (!Nodes::acceptCounter(n, f.counter)) return;
+  if (!Nodes::acceptCounter(n, f.counter)) {
+    DBG("replay drop %s code=%u counter=%lu last=%lu",
+        SecMeshClass::macToStr(mac).c_str(), f.code,
+        (unsigned long)f.counter, (unsigned long)n->lastCounter);
+    return;
+  }
 
   const bool wasDead = n->dead;
   Nodes::touchSeen(n, f);
+  if (wasDead) DBG("%s back online", SecMeshClass::macToStr(mac).c_str());
+
+  // Every heartbeat is answered, which is what lets the node prove the link works downstream
+  // as well as up. Without a reply it saw permanent silence and hopped channel on a healthy
+  // link, which is what made modules flap between online and offline.
+  if (f.code == EV_HEARTBEAT) SecMesh.sendTo(mac, CMD_PING, Sec::mode());
 
   // Tell it the current mode the moment it reappears, so a node that missed an arm while it
   // was away does not sit there disarmed.

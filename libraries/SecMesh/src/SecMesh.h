@@ -5,6 +5,7 @@
 #include <Arduino.h>
 #include "SecEvents.h"
 #include "SecMeshConfig.h"
+#include "SecDebug.h"
 
 // ========== [Wire frame] ==========
 // 15 bytes, packed. Widening or reordering any field is a protocol break: bump
