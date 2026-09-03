@@ -37,7 +37,7 @@ static Score scoreFor(uint8_t code) {
     case EV_CODE_ATTACK: return {70, false};
     case EV_MOTION:      return {30, true};
     case EV_DOOR_OPEN:   return {40, true};
-    case EV_LASER_CUT:   return {45, true};
+    case EV_LASER_CUT:   return {70, true};
     case EV_IMPACT:      return {70, true};
     case EV_GLASS:       return {70, true};
     default:             return {0, false};
@@ -544,8 +544,11 @@ int  risk() { return g_risk; }
 uint8_t displayMode() { return Access::lockdown() ? MODE_LOCKDOWN : g_mode; }
 bool arming() { return g_pendingMode != MODE_DISARMED; }
 
+// The countdown the UI shows is "time you have to act", which is the exit and entry delays
+// only. An alarm has a deadline too, but showing it turns the siren into a progress bar and
+// tells an intruder exactly how long to wait.
 uint32_t countdownMs() {
-  if (g_deadline == 0) return 0;
+  if (g_deadline == 0 || g_mode == MODE_ALARM) return 0;
   const uint32_t now = millis();
   return (now >= g_deadline) ? 0 : (g_deadline - now);
 }

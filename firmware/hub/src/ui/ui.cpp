@@ -403,7 +403,12 @@ void tick() {
     }
   }
 
-  const bool periodic = (g_page != PAGE_KEYPAD) && (now - g_lastPaint > 400);
+  // Only the status page has fields that change on their own — the clock, the risk bar, a
+  // countdown. The log now shows wall-clock stamps and manage no longer counts a session
+  // down, so both are event-driven; manage still ticks slowly so a module going offline
+  // appears without waiting for an unrelated event to mark the page dirty.
+  const bool periodic = (g_page == PAGE_STATUS && now - g_lastPaint > 500) ||
+                        (g_page == PAGE_MANAGE && now - g_lastPaint > 1000);
   if (!g_full && !g_dirty && !periodic && !toastLive) return;
 
   const bool full = g_full;

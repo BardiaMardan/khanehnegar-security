@@ -46,8 +46,10 @@ void drawEntry(const char *prompt, uint16_t width) {
 }
 
 // ========== [Status page] ==========
+// Wall clock, never a relative age. "120s ago" changes every second, which forced a repaint
+// of twelve rows at 2.5 Hz and made the whole panel feel laggy for no information gain.
+// An entry with no epoch predates the first time sync and shows dashes.
 static String stamp(const LogEntry &e) {
-  if (e.at) return String((millis() - e.at) / 1000) + "s";
   return Store::hhmm(e.epoch);
 }
 
@@ -296,12 +298,6 @@ void drawManage(bool full) {
     tft.fillRect(0, 0, SCR_W, NAV_TOP, COL_BG);
     label(8, 6, "manage", COL_DIM, 2, 80);
   }
-
-  tft.setTextDatum(TR_DATUM);
-  tft.setTextPadding(64);
-  tft.setTextColor(COL_ACCENT, COL_BG);
-  tft.drawString(String(Access::sessionMsLeft() / 1000) + "s left", 232, 6, 2);
-  tft.setTextPadding(0);
 
   int row = 0;
   for (int i = 0; i < Nodes::capacity() && row < 5; i++) {

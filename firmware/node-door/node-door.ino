@@ -12,6 +12,16 @@
 
 #define ENABLE_CASE_TAMPER 1
 
+// Both switches wire to GND and rely on the internal pull-up, so a closed switch reads LOW.
+// Flip these to 0 if you fit normally-open switches instead of normally-closed ones.
+#define DOOR_CLOSED_IS_LOW 1
+#define CASE_CLOSED_IS_LOW 1
+
+// A microswitch bounces for a few milliseconds and the internal pull-up is only about 45k,
+// so an unwired or long-jumpered pin drifts across the logic threshold on noise alone.
+// Without this the door reported open and closed several times a second.
+#define SWITCH_DEBOUNCE_MS 120UL
+
 #define ADXL_PRIMARY     0x53
 #define ADXL_ALTERNATE   0x1D
 #define ADXL_DEVID       0x00
@@ -39,6 +49,8 @@ static uint8_t  adxlAddr    = ADXL_PRIMARY;
 static bool     adxlReady   = false;
 
 static bool     doorOpen    = false;
+static bool     doorRaw     = false;
+static uint32_t doorEdge    = 0;
 static uint8_t  hubMode     = MODE_DISARMED;
 static uint32_t lastImpact  = 0;
 static uint32_t lastAgitate = 0;
@@ -57,6 +69,11 @@ static uint32_t touchEdge   = 0;
 static uint32_t touchSince  = 0;
 static uint32_t touchSent   = 0;
 static bool     touchStuck  = false;
+
+static bool doorIsOpen() {
+  const int level = digitalRead(PIN_DOOR);
+  return DOOR_CLOSED_IS_LOW ? (level == HIGH) : (level == LOW);
+}
 
 static void adxlWrite(uint8_t reg, uint8_t val) {
   Wire.beginTransmission(adxlAddr);
@@ -245,13 +262,43 @@ void setup() {
   }
 
 #if ENABLE_CASE_TAMPER
-  SecMesh.setTamperPin(PIN_CASE, true);
+  SecMesh.setTamperPin(PIN_CASE, CASE_CLOSED_IS_LOW ? true : false);
 #endif
 
-  doorOpen = digitalRead(PIN_DOOR) == HIGH;
+  pinMode(PIN_DOOR, INPUT_PULLUP);
+  doorOpen = doorRaw = doorIsOpen();
+  doorEdge = millis();
   touchRaw = touchStable = digitalRead(PIN_TOUCH) == HIGH;
+
   Serial.print("door node mac: ");
   Serial.println(SecMeshClass::macToStr(SecMesh.selfMac()));
+
+  // Raw levels at boot, so a switch that is wired to the wrong rail is visible immediately
+  // rather than looking like a firmware fault. A closed switch to GND must read 0.
+  DBG("pins: door(%d)=%d case(%d)=%d touch(%d)=%d",
+      PIN_DOOR, digitalRead(PIN_DOOR), PIN_CASE, digitalRead(PIN_CASE),
+      PIN_TOUCH, digitalRead(PIN_TOUCH));
+  DBG("door reads %s, case reads %s",
+      doorOpen ? "OPEN" : "closed",
+      (digitalRead(PIN_CASE) == (CASE_CLOSED_IS_LOW ? HIGH : LOW)) ? "OPEN" : "closed");
+}
+
+// ========== [Door switch] ==========
+static void sampleDoor() {
+  const uint32_t now = millis();
+  const bool raw = doorIsOpen();
+
+  if (raw != doorRaw) {
+    doorRaw = raw;
+    doorEdge = now;
+    return;
+  }
+  if (raw == doorOpen || now - doorEdge < SWITCH_DEBOUNCE_MS) return;
+
+  doorOpen = raw;
+  DBG("door %s", raw ? "OPEN" : "closed");
+  if (raw) SecMesh.sendUrgent(EV_DOOR_OPEN);
+  else     SecMesh.send(EV_DOOR_CLOSED);
 }
 
 void loop() {
@@ -259,14 +306,7 @@ void loop() {
 
   digitalWrite(PIN_LED, SecMesh.hasHub() ? LOW : ((millis() / 400) % 2));
 
-  const bool open = digitalRead(PIN_DOOR) == HIGH;
-  if (open != doorOpen) {
-    doorOpen = open;
-    if (open) SecMesh.sendUrgent(EV_DOOR_OPEN);
-    else      SecMesh.send(EV_DOOR_CLOSED);
-    delay(60);
-  }
-
+  sampleDoor();
   sampleTouch();
   sampleAccel();
 }
