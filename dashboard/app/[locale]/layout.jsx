@@ -13,6 +13,15 @@ export const metadata = {
   description: 'local security terminal',
 }
 
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#f6f6f7' },
+    { media: '(prefers-color-scheme: dark)', color: '#0f0f12' },
+  ],
+}
+
 export function generateStaticParams() {
   return locales.map((locale) => ({ locale }))
 }

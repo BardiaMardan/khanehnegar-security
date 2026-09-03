@@ -45,7 +45,7 @@ export default function Feed({ initial, locale, t, other }) {
         <div>
           <h1>{t.title}</h1>
           <p className="sub">
-            {events.length} {t.events} · {t.refreshing}
+            {events.length} {t.events}
           </p>
         </div>
         <div className="actions">

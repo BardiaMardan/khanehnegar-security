@@ -211,6 +211,8 @@ button.danger {
   color: var(--faint);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  direction: ltr;
+  unicode-bidi: isolate;
 }
 
 .tag {
@@ -341,4 +343,96 @@ footer a {
 
 footer a:hover {
   color: var(--accent);
+}
+
+@media (max-width: 600px) {
+  body {
+    font-size: 16px;
+  }
+
+  main {
+    padding: 0 14px;
+  }
+
+  header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    padding: 20px 0 16px;
+  }
+
+  h1 {
+    font-size: 21px;
+  }
+
+  .actions {
+    justify-content: flex-start;
+  }
+
+  button,
+  .btn {
+    min-height: 40px;
+    padding: 9px 14px;
+  }
+
+  .row {
+    grid-template-columns: auto 1fr;
+    row-gap: 10px;
+    padding: 14px;
+  }
+
+  .row > :last-child {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .time {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .rename {
+    flex-wrap: wrap;
+  }
+
+  .rename input {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .controls-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .controls-row button {
+    min-width: 0;
+    white-space: nowrap;
+    padding: 9px 6px;
+    font-size: 14px;
+  }
+
+  .controls-row button:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .login {
+    margin-top: 6vh;
+    padding: 24px 20px;
+  }
+
+  .empty {
+    padding: 36px 18px;
+  }
+
+  footer {
+    padding: 32px 0 24px;
+  }
+}
+
+@media (max-width: 380px) {
+  .controls-row {
+    grid-template-columns: 1fr;
+  }
 }
