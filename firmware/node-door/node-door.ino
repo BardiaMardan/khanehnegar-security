@@ -1,8 +1,8 @@
 // =============================================================================
-//  node-door.ino — door node: ADXL345 motion and a capacitive handle pad
+//  node-door.ino — door node: ADXL345 motion and the ESP32's own touch channel
 //
-//  No switches. The accelerometer is the door sensor and the touch pad is the
-//  silent trigger. Everything else was removed.
+//  The accelerometer is the door sensor and the touch pad is the
+//  silent trigger.
 // =============================================================================
 
 #include <Wire.h>
@@ -12,9 +12,10 @@
 // ========== [Pins] ==========
 #define PIN_SDA           21
 #define PIN_SCL           22
-#define PIN_TOUCH         19
+#define PIN_TOUCH         27
 
 #define ALWAYS_UNCLAIM     1
+#define TOUCH_TRACE        1
 
 // ========== [ADXL345 registers] ==========
 #define ADXL_PRIMARY     0x53
@@ -41,9 +42,14 @@
 #define SAMPLE_MS          20UL
 
 // ========== [Touch tuning] ==========
+#define TOUCH_SAMPLE_MS     20UL
 #define TOUCH_DEBOUNCE_MS   50UL
 #define TOUCH_REARM_MS    4000UL
 #define TOUCH_STUCK_MS   30000UL
+#define TOUCH_CALIB_MS     600UL
+#define TOUCH_DRIFT_MS     500UL
+#define TOUCH_DROP_PCT      75
+#define TOUCH_MIN_DROP       4
 
 // ========== [State] ==========
 static uint8_t  adxlAddr    = ADXL_PRIMARY;
@@ -69,7 +75,9 @@ static bool     touchStable = false;
 static uint32_t touchEdge   = 0;
 static uint32_t touchSince  = 0;
 static uint32_t touchSent   = 0;
-static bool     touchStuck  = false;
+static uint16_t touchBase   = 0;
+static uint32_t touchAt     = 0;
+static uint32_t touchDrift  = 0;
 
 // ========== [ADXL345] ==========
 static void adxlWrite(uint8_t reg, uint8_t val) {
@@ -138,12 +146,47 @@ static void onRx(const uint8_t mac[6], const SecFrame &f) {
 }
 
 // ========== [Handle touch — the silent trigger] ==========
-// Rising edge only, so it behaves the same whether the pad is jumpered momentary or latching.
-// If the output stays high past TOUCH_STUCK_MS it is treated as stuck and waits for a real
-// release rather than sitting on a permanent alarm.
+static uint16_t touchSample() {
+  uint32_t sum = 0;
+  for (int i = 0; i < 3; i++) sum += touchRead(PIN_TOUCH);
+  return (uint16_t)(sum / 3);
+}
+
+static void touchCalibrate() {
+  uint32_t sum = 0, n = 0;
+  const uint32_t until = millis() + TOUCH_CALIB_MS;
+  while ((int32_t)(until - millis()) > 0) {
+    sum += touchSample();
+    n++;
+    delay(10);
+  }
+  touchBase = n ? (uint16_t)(sum / n) : 0;
+}
+
+static uint16_t touchTrip() {
+  uint16_t trip = (uint16_t)((uint32_t)touchBase * TOUCH_DROP_PCT / 100);
+  if (touchBase - trip < TOUCH_MIN_DROP) {
+    trip = (touchBase > TOUCH_MIN_DROP) ? (uint16_t)(touchBase - TOUCH_MIN_DROP) : 0;
+  }
+  return trip;
+}
+
 static void sampleTouch() {
   const uint32_t now = millis();
-  const bool raw = digitalRead(PIN_TOUCH) == HIGH;
+  if (!touchBase || now - touchAt < TOUCH_SAMPLE_MS) return;
+  touchAt = now;
+
+  const uint16_t v = touchSample();
+  const uint16_t trip = touchTrip();
+  const bool raw = v < trip;
+
+#if TOUCH_TRACE
+  static uint32_t traceAt = 0;
+  if (now - traceAt > 400) {
+    traceAt = now;
+    DBG("touch %u base %u trip %u%s", v, touchBase, trip, raw ? "  <<<" : "");
+  }
+#endif
 
   if (raw != touchRaw) {
     touchRaw = raw;
@@ -153,23 +196,28 @@ static void sampleTouch() {
   if (now - touchEdge < TOUCH_DEBOUNCE_MS) return;
 
   if (raw == touchStable) {
-    if (raw && !touchStuck && now - touchSince > TOUCH_STUCK_MS) {
-      touchStuck = true;
-      DBG("touch stuck high");
+    if (!raw && now - touchDrift > TOUCH_DRIFT_MS) {
+      touchDrift = now;
+      const int32_t d = (int32_t)v - (int32_t)touchBase;
+      if      (d > 0) touchBase += (uint16_t)((d + 7) / 8);
+      else if (d < 0) touchBase -= (uint16_t)((-d + 7) / 8);
+    }
+    if (raw && now - touchSince > TOUCH_STUCK_MS) {
+      touchBase = v;
+      touchRaw = touchStable = false;
+      DBG("touch held past %lus, baseline relearned at %u",
+          (unsigned long)(TOUCH_STUCK_MS / 1000), touchBase);
     }
     return;
   }
 
   touchStable = raw;
-  if (!raw) {
-    touchStuck = false;
-    return;
-  }
+  if (!raw) return;
 
   touchSince = now;
   if (now - touchSent < TOUCH_REARM_MS) return;
   touchSent = now;
-  DBG("handle touched");
+  DBG("handle touched, %u under %u", v, trip);
   SecMesh.sendUrgent(EV_TOUCH);
 }
 
@@ -255,8 +303,6 @@ void setup() {
   Serial.println();
   Serial.println("khanehnegar door node");
 
-  pinMode(PIN_TOUCH, INPUT);
-
   Wire.begin(PIN_SDA, PIN_SCL);
   adxlReady = adxlBegin();
   if (adxlReady) DBG("ADXL345 found at 0x%02X", adxlAddr);
@@ -274,11 +320,11 @@ void setup() {
   if (SecMesh.hasHub()) SecMesh.send(EV_BOOT);
 #endif
 
-  touchRaw = touchStable = digitalRead(PIN_TOUCH) == HIGH;
+  touchCalibrate();
 
   Serial.print("door node mac: ");
   Serial.println(SecMeshClass::macToStr(SecMesh.selfMac()));
-  DBG("touch GPIO %d reads %d", PIN_TOUCH, digitalRead(PIN_TOUCH));
+  DBG("touch GPIO %d baseline %u, trips under %u", PIN_TOUCH, touchBase, touchTrip());
 }
 
 void loop() {
