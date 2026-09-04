@@ -133,8 +133,10 @@ void setup() {
   UI::boot("sensors");
   Climate::begin();
 
+#if ENABLE_HUB_TAMPER
   pinMode(PIN_TAMPER, INPUT_PULLUP);
   tamperLast = tamperRaw = digitalRead(PIN_TAMPER) == HIGH;
+#endif
 
   UI::boot("network");
   Net::begin();
@@ -193,6 +195,7 @@ void loop() {
     handleFrame(item.mac, item.f);
   }
 
+#if ENABLE_HUB_TAMPER
   const bool tamper = digitalRead(PIN_TAMPER) == HIGH;
   if (tamper != tamperRaw) {
     tamperRaw = tamper;
@@ -203,6 +206,7 @@ void loop() {
     UI::wake();
     UI::invalidate();
   }
+#endif
 
   handleFingerprint();
 }

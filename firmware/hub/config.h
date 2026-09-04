@@ -53,6 +53,8 @@
 #define RISK_ALARM_THRESHOLD  70
 #define RISK_DECAY_PER_SEC     3
 #define RISK_MAX             150
+#define ALERT_COOLDOWN_MS  60000UL
+#define ENABLE_HUB_TAMPER      0
 
 // ========== [Journal] ==========
 #define JOURNAL_CAPACITY   40

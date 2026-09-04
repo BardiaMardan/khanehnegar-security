@@ -23,20 +23,25 @@ struct Score { uint8_t weight; bool loud; };
 
 // loud evidence may sound the siren, silent evidence never can: a handle touch must not
 // tell the intruder they were seen.
+//
+// Anything a real intruder does exactly once reaches the threshold on its own. Nobody opens a
+// door twice on the way in, and nobody works the frame politely enough to stay under a
+// partial score — so movement, forcing, impact, a cut beam and glass all sit at 70. A handle
+// touch also reaches 70, but silently, which is the whole point of the two classes.
 static Score scoreFor(uint8_t code) {
   switch (code) {
-    case EV_PRETOUCH:    return {15, false};
-    case EV_TOUCH:       return {25, false};
-    case EV_TILT:        return {35, false};
-    case EV_AGITATION:   return {55, false};
-    case EV_TAMPER_OPEN: return {80, false};
+    case EV_PRETOUCH:    return {35, false};
+    case EV_TOUCH:       return {70, false};
     case EV_RF_PROBE:    return {25, false};
+    case EV_TAMPER_OPEN: return {80, false};
     case EV_RF_DEAUTH:   return {80, false};
     case EV_RF_JAM:      return {80, false};
     case EV_NODE_LOST:   return {75, false};
     case EV_CODE_ATTACK: return {70, false};
     case EV_MOTION:      return {30, true};
-    case EV_DOOR_OPEN:   return {40, true};
+    case EV_TILT:        return {70, true};
+    case EV_AGITATION:   return {70, true};
+    case EV_DOOR_OPEN:   return {70, true};
     case EV_LASER_CUT:   return {70, true};
     case EV_IMPACT:      return {70, true};
     case EV_GLASS:       return {70, true};
@@ -114,18 +119,33 @@ static void transition(uint8_t m, uint8_t pending, uint32_t deadline) {
 }
 
 // ========== [Alarm raising] ==========
+static uint8_t  g_lastAlertCode = 0;
+static uint32_t g_lastAlertAt   = 0;
+
+static void notify(bool silent, uint8_t kind, uint8_t code, uint16_t value) {
+  const uint32_t now = millis();
+  if (code == g_lastAlertCode && g_lastAlertAt && now - g_lastAlertAt < ALERT_COOLDOWN_MS) {
+    return;
+  }
+  g_lastAlertCode = code;
+  g_lastAlertAt   = now;
+  Net::alert(silent, secKindName(kind), secEventName(code), value);
+}
+
 static void raise(bool loud, uint8_t kind, uint8_t code, uint16_t value) {
   if (loud) {
-    transition(MODE_ALARM, MODE_DISARMED, millis() + ALARM_DURATION_MS);
-    IO::sirenOn();
-    say("ALARM");
-    showToast("ALARM", 3);
+    if (g_mode != MODE_ALARM) {
+      transition(MODE_ALARM, MODE_DISARMED, millis() + ALARM_DURATION_MS);
+      IO::sirenOn();
+      say("ALARM");
+      showToast("ALARM", 3);
+    }
     logEvent(kind, code, value, false);
   } else {
     g_silent = true;
     logEvent(kind, code, value, true);
   }
-  Net::alert(!loud, secKindName(kind), secEventName(code), value);
+  notify(!loud, kind, code, value);
 }
 
 // ========== [Risk accumulation] ==========
@@ -165,10 +185,9 @@ void onNodeEvent(NodeRec *n, const SecFrame &f) {
     return;
   }
 
-  if (g_mode == MODE_AWAY && f.code == EV_DOOR_OPEN) {
+  if (g_mode == MODE_AWAY && (f.code == EV_TILT || f.code == EV_DOOR_OPEN)) {
     transition(MODE_ENTRY, MODE_DISARMED, millis() + ENTRY_DELAY_MS);
     say("entry delay");
-    IO::chime();
     logEvent(f.kind, f.code, f.value, false);
     return;
   }
@@ -424,8 +443,7 @@ void tick() {
   if (g_deadline == 0) return;
 
   if (g_mode == MODE_ENTRY) {
-    if (now - g_lastTock > 1000) { g_lastTock = now; IO::tickTock(); }
-    if (now >= g_deadline) raise(true, KIND_HUB, EV_DOOR_OPEN, 0);
+    if (now >= g_deadline) raise(true, KIND_HUB, EV_TILT, 0);
   } else if (g_mode == MODE_ALARM) {
     if (now >= g_deadline) {
       IO::sirenOff();
@@ -433,7 +451,6 @@ void tick() {
       say("alarm timed out, armed");
     }
   } else if (g_pendingMode != MODE_DISARMED) {
-    if (now - g_lastTock > 1000) { g_lastTock = now; IO::tickTock(); }
     if (now >= g_deadline) {
       transition(g_pendingMode, MODE_DISARMED, 0);
       say("armed");

@@ -87,13 +87,13 @@ inline const char *secEventName(uint8_t e) {
     case EV_PRETOUCH:      return "hand approaching";
     case EV_TOUCH:         return "handle touched";
     case EV_IMPACT:        return "IMPACT";
-    case EV_AGITATION:     return "DOOR WORKED";
+    case EV_AGITATION:     return "DOOR FORCED";
     case EV_DOOR_OPEN:     return "opened";
     case EV_DOOR_CLOSED:   return "closed";
     case EV_GLASS:         return "GLASS BREAK";
     case EV_LASER_CUT:     return "beam cut";
     case EV_MOTION:        return "motion";
-    case EV_TILT:          return "door moved";
+    case EV_TILT:          return "DOOR MOVEMENT";
     case EV_RF_PROBE:      return "decoy probed";
     case EV_RF_DEAUTH:     return "DEAUTH FLOOD";
     case EV_RF_JAM:        return "RF JAMMING";

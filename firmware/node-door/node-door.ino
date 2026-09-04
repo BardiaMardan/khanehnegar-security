@@ -13,12 +13,7 @@
 #define PIN_SDA           21
 #define PIN_SCL           22
 #define PIN_TOUCH         19
-#define PIN_LED            5
 
-// ========== [Development] ==========
-// 1 = forget the hub on every boot, so a fresh upload always comes up hunting and can be
-// re-adopted from the MANAGE tab. Set to 0 for the demo: with it on, any power blip leaves
-// the node orphaned until someone opens pairing mode again.
 #define ALWAYS_UNCLAIM     1
 
 // ========== [ADXL345 registers] ==========
@@ -32,16 +27,14 @@
 #define ADXL_SCALE_G     0.0039f
 
 // ========== [Motion tuning] ==========
-// The door is "open" once it has swung TILT_OPEN_DEG off the orientation it was resting at,
-// and "closed" again below TILT_SHUT_DEG. The gap between the two is hysteresis: a single
-// threshold would flap for as long as the door hovered on it.
 #define IMPACT_G         1.30f
 #define AGITATE_G        0.09f
 #define AGITATE_WINDOW  3000UL
 #define AGITATE_COUNT     10
-#define TILT_OPEN_DEG    12.0f
-#define TILT_SHUT_DEG     6.0f
-#define TILT_HOLD_MS     350UL
+#define MOVE_DEG         10.0f
+#define MOVE_REST_DEG     4.0f
+#define MOVE_HOLD_MS     400UL
+#define MOVE_REARM_MS   8000UL
 #define IMPACT_HOLDOFF  1500UL
 #define REST_G           0.04f
 #define REST_SETTLE_MS  4000UL
@@ -67,9 +60,9 @@ static float    baseX = 0, baseY = 0, baseZ = 1;
 static bool     haveBase    = false;
 static uint32_t restSince   = 0;
 
-static bool     doorOpen    = false;
-static uint32_t tiltSince   = 0;
-static uint32_t shutSince   = 0;
+static bool     moved       = false;
+static uint32_t moveSince   = 0;
+static uint32_t moveSent    = 0;
 
 static bool     touchRaw    = false;
 static bool     touchStable = false;
@@ -138,7 +131,6 @@ static void onRx(const uint8_t mac[6], const SecFrame &f) {
       hubMode = f.arg;
       break;
     case CMD_IDENTIFY:
-      for (int i = 0; i < 6; i++) { digitalWrite(PIN_LED, i % 2); delay(120); }
       break;
     default:
       break;
@@ -239,33 +231,22 @@ static void sampleAccel() {
   const float dot = (x * baseX + y * baseY + z * baseZ) / mag;
   const float ang = acosf(constrain(dot, -1.0f, 1.0f)) * 57.2958f;
 
-  if (!doorOpen) {
-    shutSince = 0;
-    if (ang > TILT_OPEN_DEG) {
-      if (tiltSince == 0) tiltSince = now;
-      if (now - tiltSince > TILT_HOLD_MS) {
-        doorOpen = true;
-        tiltSince = 0;
-        DBG("door OPEN at %.1f deg", ang);
-        SecMesh.sendUrgent(EV_DOOR_OPEN, 0, (uint16_t)ang);
-      }
-    } else {
-      tiltSince = 0;
-    }
-  } else {
-    tiltSince = 0;
-    if (ang < TILT_SHUT_DEG) {
-      if (shutSince == 0) shutSince = now;
-      if (now - shutSince > TILT_HOLD_MS) {
-        doorOpen = false;
-        shutSince = 0;
-        DBG("door closed at %.1f deg", ang);
-        SecMesh.send(EV_DOOR_CLOSED, 0, (uint16_t)ang);
-      }
-    } else {
-      shutSince = 0;
-    }
+  if (ang < MOVE_REST_DEG) {
+    moved = false;
+    moveSince = 0;
+    return;
   }
+
+  if (ang < MOVE_DEG) return;
+
+  if (moveSince == 0) moveSince = now;
+  if (moved || now - moveSince < MOVE_HOLD_MS) return;
+  if (moveSent && now - moveSent < MOVE_REARM_MS) return;
+
+  moved = true;
+  moveSent = now;
+  DBG("movement %.1f deg", ang);
+  SecMesh.sendUrgent(EV_TILT, 0, (uint16_t)ang);
 }
 
 void setup() {
@@ -273,13 +254,6 @@ void setup() {
   delay(200);
   Serial.println();
   Serial.println("khanehnegar door node");
-
-  pinMode(PIN_LED, OUTPUT);
-  digitalWrite(PIN_LED, HIGH);
-  delay(500);
-  digitalWrite(PIN_LED, LOW);
-  delay(150);
-  DBG("LED self-test done on GPIO %d", PIN_LED);
 
   pinMode(PIN_TOUCH, INPUT);
 
@@ -309,10 +283,6 @@ void setup() {
 
 void loop() {
   SecMesh.tick();
-
-  // Solid = claimed and healthy. Blinking = hunting for a hub.
-  digitalWrite(PIN_LED, SecMesh.hasHub() ? HIGH : ((millis() / 400) % 2));
-
   sampleTouch();
   sampleAccel();
 }
