@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  firmware:
+    name: firmware (${{ matrix.sketch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sketch: [hub, node-door, node-laser]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: arduino/setup-arduino-cli@v2
+
+      - name: Install ESP32 core
+        run: |
+          arduino-cli core update-index --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core install esp32:esp32@3.3.11 --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+
+      - name: Install libraries
+        run: |
+          arduino-cli lib install "TFT_eSPI@2.5.43" "Adafruit Fingerprint Sensor Library@2.1.4" "DHT sensor library@1.4.7" "Adafruit Unified Sensor@1.1.15"
+
+      - name: Apply the TFT_eSPI pin setup
+        run: cp TFT_eSPI_User_Setup.h "$HOME/Arduino/libraries/TFT_eSPI/User_Setup.h"
+
+      - name: Use the example hub secrets
+        if: matrix.sketch == 'hub'
+        run: cp firmware/hub/secrets.example.h firmware/hub/secrets.h
+
+      - name: Compile
+        run: arduino-cli compile --fqbn esp32:esp32:esp32 --library libraries/SecMesh firmware/${{ matrix.sketch }}
+
+  dashboard:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: dashboard/.nvmrc
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+
+      - run: npm ci
+      - run: npm run build

@@ -9,13 +9,24 @@
 #define SECMESH_CHANNEL     1
 
 // ========== [Keys] ==========
-#define SECMESH_PMK         "KhanehNegarPMK01"
-#define SECMESH_LMK         "KhanehNegarLMK01"
+// Per-site keys live in SecMeshKeys.h next to this file, which git ignores. Without it the
+// build uses the published example keys, which anyone with this repository can read, so the
+// warning is there to make that impossible to miss. Every board on a site must share one pair.
+#if __has_include("SecMeshKeys.h")
+  #include "SecMeshKeys.h"
+#else
+  #warning "SecMesh: using the example keys. Copy SecMeshKeys.example.h to SecMeshKeys.h and change them."
+  #include "SecMeshKeys.example.h"
+#endif
+
+static_assert(sizeof(SECMESH_PMK) == 17, "SECMESH_PMK must be exactly 16 characters");
+static_assert(sizeof(SECMESH_LMK) == 17, "SECMESH_LMK must be exactly 16 characters");
 
 // ESP8266 ESP-NOW does not interoperate reliably with the ESP32's encrypted unicast: the
 // broadcast pairing frames get through and every encrypted unicast is dropped, which left an
 // ESP8266 node claimed but structurally mute. Those nodes use plaintext unicast. The link is
-// still counter-protected and MAC-filtered, but it is readable off the air — see ADR-002.
+// still counter-protected and MAC-filtered, but it is readable off the air — see
+// docs/security.md, "ESP8266 nodes".
 #if defined(ESP8266)
   #define SECMESH_WANT_ENCRYPTION 0
 #else

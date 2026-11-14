@@ -94,7 +94,7 @@ bool begin() {
   }
 
   if (!g_ready) {
-    Serial.println("sd: not mounted. run firmware/tools/sdtest");
+    Serial.println("sd: not mounted. see docs/troubleshooting.md");
     return false;
   }
 

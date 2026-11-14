@@ -14,8 +14,11 @@
 #define PIN_SCL           22
 #define PIN_TOUCH         27
 
+// The node keeps no record of the hub's WiFi channel, so a restored claim starts on channel 1
+// and only hops after SECMESH_SILENT_MS. Starting unclaimed hunts every 400 ms instead, and the
+// hub re-adopts a MAC it already knows without PAIR MODE, so rejoining after a reboot is fast.
 #define ALWAYS_UNCLAIM     1
-#define TOUCH_TRACE        1
+#define TOUCH_TRACE        0
 
 // ========== [ADXL345 registers] ==========
 #define ADXL_PRIMARY     0x53
