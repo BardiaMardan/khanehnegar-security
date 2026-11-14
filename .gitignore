@@ -1,15 +1,18 @@
+# local tooling and notes
 CLAUDE.md
 DISPLAY-CLAUDE.md
 .claude/
 .cursor/
 .aider*
+.agents/
+skills-lock.json
 *.local.md
 
-docs/
-
+# arduino: third-party libraries are installed, not vendored
 libraries/*
 !libraries/SecMesh/
 
+# build output
 build/
 *.bin
 *.elf
@@ -19,13 +22,17 @@ build/
 .pio/
 .vscode/
 
+# per-site secrets
 secrets.h
+SecMeshKeys.h
 calibration.json
 
+# os / editor
 .DS_Store
 Thumbs.db
 *.swp
 
+# dashboard
 node_modules/
 .next/
 dashboard/data/
