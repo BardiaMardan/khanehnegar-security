@@ -1,10 +1,12 @@
-import { Vazirmatn } from 'next/font/google'
+import localFont from 'next/font/local'
 import { locales, isRtl, dict } from '../../lib/i18n'
 import '../globals.css'
 
-const vazir = Vazirmatn({
-  subsets: ['arabic', 'latin'],
-  weight: ['400', '500', '600', '700'],
+// Bundled rather than fetched from Google Fonts at build time, so the dashboard builds
+// offline and on networks where Google is unreachable.
+const vazir = localFont({
+  src: '../fonts/Vazirmatn-wght.woff2',
+  weight: '100 900',
   display: 'swap',
 })
 

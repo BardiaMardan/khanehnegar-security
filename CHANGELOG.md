@@ -13,7 +13,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 - ESP-NOW keys moved out of `SecMeshConfig.h` into a per-site, git-ignored `SecMeshKeys.h`. When that file is missing, the build falls back to the example keys and prints a warning.
-- The door node no longer forgets its hub on every boot, and touch tracing is off by default.
+- Door node touch tracing is off by default.
+- The dashboard bundles the Vazirmatn font instead of fetching it from Google Fonts at build time, so it builds offline and where Google is blocked.
 - The SD-card examples no longer mention the duress finger, which the hub dropped earlier.
 
 ### Removed
