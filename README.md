@@ -1,6 +1,6 @@
 <div align="center">
 
-# khanehnegar · خانه‌نگار
+# khanehnegar · خانه‌نگر
 
 **A modular, self-hosted home security system built on ESP32.**
 Encrypted wireless sensors, a fingerprint and touch-screen terminal that decides on its own, and a bilingual web dashboard with Telegram and Bale alerts.

@@ -50,7 +50,7 @@ const dictionaries = {
     renamed: 'name updated',
   },
   fa: {
-    title: 'خانه‌نگار',
+    title: 'خانه‌نگر',
     subtitle: 'پایانه امنیتی محلی',
     signIn: 'ورود',
     signingIn: 'در حال بررسی',
